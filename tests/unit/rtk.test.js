@@ -10,6 +10,10 @@ import { tree } from "../../open-sse/rtk/filters/tree.js";
 import { smartTruncate } from "../../open-sse/rtk/filters/smartTruncate.js";
 import { readNumbered } from "../../open-sse/rtk/filters/readNumbered.js";
 import { searchList } from "../../open-sse/rtk/filters/searchList.js";
+import { nextBuild } from "../../open-sse/rtk/filters/nextBuild.js";
+import { npmInstall } from "../../open-sse/rtk/filters/npmInstall.js";
+import { testRunner } from "../../open-sse/rtk/filters/testRunner.js";
+import { lintOutput } from "../../open-sse/rtk/filters/lintOutput.js";
 import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 
@@ -51,6 +55,83 @@ function makeFindOutput() {
   for (let i = 0; i < 20; i++) lines.push(`./src/b/${i}.js`);
   for (let i = 0; i < 5; i++) lines.push(`./top${i}.md`);
   return lines.join("\n");
+}
+
+function makeNextBuildOutput() {
+  return [
+    "   ▲ Next.js 16.1.6 (webpack)",
+    "   Creating an optimized production build ...",
+    " ✓ Compiled successfully in 11.2s",
+    "   Running TypeScript ...",
+    "Failed to compile.",
+    "",
+    "./src/app/dashboard/page.js:42:12",
+    "Type error: Property 'total' does not exist on type 'Stats'.",
+    "",
+    "  40 | export default function Page({ stats }) {",
+    "  41 |   return (",
+    "> 42 |     <div>{stats.total}</div>",
+    "     |            ^",
+    "  43 |   );",
+    "  44 | }",
+    "",
+    "Next.js build worker exited with code: 1 and signal: null",
+    ...Array.from({ length: 40 }, (_, i) => `webpack cache diagnostic noise line ${i}`)
+  ].join("\n");
+}
+
+function makeVitestOutput() {
+  return [
+    " RUN  v4.0.0 C:/repo/tests",
+    "",
+    " ✓ unit/a.test.js > passes 4ms",
+    " ❯ unit/rtk.test.js (8 tests | 1 failed) 92ms",
+    "   × RTK filters > keeps expected failure details 12ms",
+    "     → expected 'Loading' to be 'Submit'",
+    "",
+    " FAIL  unit/rtk.test.js > RTK filters > keeps expected failure details",
+    "AssertionError: expected 'Loading' to be 'Submit'",
+    "Expected: \"Submit\"",
+    "Received: \"Loading\"",
+    " ❯ tests/unit/rtk.test.js:88:19",
+    "",
+    " Test Files  1 failed | 4 passed (5)",
+    "      Tests  1 failed | 72 passed (73)",
+    "   Duration  1.83s",
+    ...Array.from({ length: 30 }, (_, i) => `stdout debug noise ${i}`)
+  ].join("\n");
+}
+
+function makeEslintOutput() {
+  return [
+    "C:/repo/src/app/page.js",
+    "  12:7   error    'unused' is assigned a value but never used  no-unused-vars",
+    "  30:5   warning  React Hook useEffect has missing dependency  react-hooks/exhaustive-deps",
+    "",
+    "C:/repo/src/lib/api.js",
+    "  5:10   error    Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any",
+    "",
+    "✖ 3 problems (2 errors, 1 warning)",
+    ...Array.from({ length: 20 }, (_, i) => `eslint formatter noise ${i}`)
+  ].join("\n");
+}
+
+function makeNpmInstallOutput() {
+  return [
+    "npm WARN deprecated inflight@1.0.6: This module is not supported",
+    "npm WARN deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported",
+    "",
+    "added 482 packages, and audited 483 packages in 18s",
+    "",
+    "92 packages are looking for funding",
+    "  run `npm fund` for details",
+    "",
+    "3 vulnerabilities (1 low, 1 moderate, 1 high)",
+    "",
+    "To address all issues, run:",
+    "  npm audit fix",
+    ...Array.from({ length: 80 }, (_, i) => `extract: package-${i}@1.0.${i}`)
+  ].join("\n");
 }
 
 describe("RTK flag", () => {
@@ -212,6 +293,52 @@ describe("RTK filters (extras)", () => {
     expect(out).toMatch(/\+\d+/);
     expect(out.length).toBeLessThan(input.length);
   });
+
+  it("nextBuild preserves compile errors and removes build noise", () => {
+    const input = makeNextBuildOutput();
+    const out = nextBuild(input);
+    expect(out).toContain("Next build failed");
+    expect(out).toContain("Type error");
+    expect(out).toContain("src/app/dashboard/page.js:42:12");
+    expect(out).toContain("Next.js build worker exited");
+    expect(out).not.toContain("webpack cache diagnostic noise line 39");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("testRunner keeps failed test details and pass/fail counts", () => {
+    const input = makeVitestOutput();
+    const out = testRunner(input);
+    expect(out).toContain("Tests:");
+    expect(out).toContain("1 failed");
+    expect(out).toContain("72 passed");
+    expect(out).toContain("Expected: \"Submit\"");
+    expect(out).toContain("Received: \"Loading\"");
+    expect(out).not.toContain("stdout debug noise 29");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("lintOutput groups lint diagnostics by file", () => {
+    const input = makeEslintOutput();
+    const out = lintOutput(input);
+    expect(out).toContain("Lint:");
+    expect(out).toContain("2 errors");
+    expect(out).toContain("1 warning");
+    expect(out).toContain("src/app/page.js");
+    expect(out).toContain("no-unused-vars");
+    expect(out).not.toContain("eslint formatter noise 19");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("npmInstall summarizes dependency install output", () => {
+    const input = makeNpmInstallOutput();
+    const out = npmInstall(input);
+    expect(out).toContain("npm install:");
+    expect(out).toContain("added 482 packages");
+    expect(out).toContain("3 vulnerabilities");
+    expect(out).toContain("npm audit fix");
+    expect(out).not.toContain("extract: package-79");
+    expect(out.length).toBeLessThan(input.length);
+  });
 });
 
 describe("autoDetectFilter (extras)", () => {
@@ -230,6 +357,18 @@ describe("autoDetectFilter (extras)", () => {
   it("detects Cursor search list", () => {
     const input = "Result of search in '/x' (total 3 files):\n- a/b.js\n- a/c.js\n- a/d.js";
     expect(autoDetectFilter(input).filterName).toBe("search-list");
+  });
+  it("detects Next build output", () => {
+    expect(autoDetectFilter(makeNextBuildOutput()).filterName).toBe("next-build");
+  });
+  it("detects Vitest output", () => {
+    expect(autoDetectFilter(makeVitestOutput()).filterName).toBe("test-runner");
+  });
+  it("detects ESLint output", () => {
+    expect(autoDetectFilter(makeEslintOutput()).filterName).toBe("lint-output");
+  });
+  it("detects npm install output", () => {
+    expect(autoDetectFilter(makeNpmInstallOutput()).filterName).toBe("npm-install");
   });
 });
 

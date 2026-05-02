@@ -50,5 +50,9 @@ export const FILTERS = {
   DEDUP_LOG: "dedup-log",
   SMART_TRUNCATE: "smart-truncate",
   READ_NUMBERED: "read-numbered",
-  SEARCH_LIST: "search-list"
+  SEARCH_LIST: "search-list",
+  NEXT_BUILD: "next-build",
+  NPM_INSTALL: "npm-install",
+  TEST_RUNNER: "test-runner",
+  LINT_OUTPUT: "lint-output"
 };

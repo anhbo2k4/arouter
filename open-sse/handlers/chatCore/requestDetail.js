@@ -196,7 +196,7 @@ export function buildQuotaLockedResponse(quotaStatus, source = {}) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "X-9Router-Quota-Locked": "true",
+      "X-Arouter-Quota-Locked": "true",
     },
   });
 }

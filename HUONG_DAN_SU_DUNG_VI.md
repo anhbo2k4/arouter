@@ -1,10 +1,10 @@
-# Huong Dan Su Dung clone_9router (Ban Ca Nhan)
+# Huong Dan Su Dung clone_arouter (Ban Ca Nhan)
 
-Tai lieu nay tap trung vao cach dung thuc te cho repo ca nhan `clone_9router`, bao gom cac chuc nang moi vua them.
+Tai lieu nay tap trung vao cach dung thuc te cho repo ca nhan `clone_arouter`, bao gom cac chuc nang moi vua them.
 
 ## 1. Muc tieu nhanh
 
-- Chay 9Router local o cong `1508`
+- Chay Arouter local o cong `1508`
 - Ket noi provider de dung ngay trong Claude Code/Codex/Cursor/Cline
 - Quan ly API key theo han muc token
 - Test nhanh tung key khong can CLI
@@ -48,7 +48,7 @@ Codex CLI:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:1508"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-arouter-api-key"
 codex "hello"
 ```
 
@@ -166,7 +166,7 @@ Luu y:
 
 ## 7. Ghi chu cho repo ca nhan nay
 
-- File `.9router-token-quota.json` la du lieu runtime local, khong bat buoc push.
+- File `.arouter-token-quota.json` la du lieu runtime local, khong bat buoc push.
 - Neu deploy public, nen bat:
   - `REQUIRE_API_KEY=true`
   - `AUTH_COOKIE_SECURE=true` (khi chay sau HTTPS reverse proxy)

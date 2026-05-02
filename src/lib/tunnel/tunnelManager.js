@@ -8,8 +8,8 @@ import { buildTunnelApiUrl, buildTunnelPublicUrl } from "./tunnelUrls.js";
 
 initDbHooks(getSettings, updateSettings);
 
-const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://9router.com";
-const MACHINE_ID_SALT = "9router-tunnel-salt";
+const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://arouter.com";
+const MACHINE_ID_SALT = "arouter-tunnel-salt";
 const RECONNECT_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
 const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_MS.length;
 

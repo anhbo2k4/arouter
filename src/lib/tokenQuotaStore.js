@@ -6,7 +6,7 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { DATA_DIR } from "@/lib/dataDir";
 
 const TOKEN_QUOTA_DATA_DIR = process.env.TOKEN_QUOTA_DATA_DIR || DATA_DIR;
-const DB_FILE = path.join(TOKEN_QUOTA_DATA_DIR, ".9router-token-quota.json");
+const DB_FILE = path.join(TOKEN_QUOTA_DATA_DIR, ".arouter-token-quota.json");
 const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 const DEFAULT_DB = {

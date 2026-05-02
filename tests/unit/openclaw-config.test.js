@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { normalizeOpenClawBaseUrl } from "../../src/lib/cliTools/openclawConfig.js";
 
 describe("OpenClaw config URL normalization", () => {
-  it("replaces 9router short domains with direct tunnel API URL", () => {
-    const result = normalizeOpenClawBaseUrl("https://r3k3k83.9router.com/v1", {
+  it("replaces arouter short domains with direct tunnel API URL", () => {
+    const result = normalizeOpenClawBaseUrl("https://r3k3k83.arouter.com/v1", {
       tunnel: { apiUrl: "https://direct.trycloudflare.com" },
     });
 

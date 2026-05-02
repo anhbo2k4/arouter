@@ -2,20 +2,20 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router proxy",
+  name: "Arouter proxy",
   description: "AI Infrastructure Management",
   version: pkg.version,
 };
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
+  changelogUrl: "https://raw.githubusercontent.com/decolua/arouter/refs/heads/master/CHANGELOG.md",
 };
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
+  npmPackageName: "arouter",
+  installCmd: "npm i -g arouter",
   exitDelayMs: 500,
   statusPort: 1508,
   statusPollIntervalMs: 1000,

@@ -10,9 +10,9 @@ export function normalizeOpenClawBaseUrl(baseUrl, tunnelStatus = {}) {
   }
 
   const host = parsed.hostname.toLowerCase();
-  const is9RouterShortHost = /^r[a-z0-9]+\.9router\.com$/.test(host);
+  const isArouterShortHost = /^r[a-z0-9]+\.arouter\.com$/.test(host);
   const directTunnelUrl = tunnelStatus?.tunnel?.apiUrl || tunnelStatus?.tunnel?.tunnelUrl || tunnelStatus?.apiUrl || tunnelStatus?.tunnelUrl || "";
-  const selected = is9RouterShortHost && directTunnelUrl ? String(directTunnelUrl).trim().replace(/\/+$/, "") : raw;
+  const selected = isArouterShortHost && directTunnelUrl ? String(directTunnelUrl).trim().replace(/\/+$/, "") : raw;
 
   return selected.endsWith("/v1") ? selected : `${selected}/v1`;
 }

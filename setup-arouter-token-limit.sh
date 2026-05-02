@@ -5,7 +5,7 @@ ROOT="${1:-.}"
 cd "$ROOT"
 
 if [ ! -f package.json ]; then
-  echo "❌ Không thấy package.json. Hãy chạy trong thư mục repo 9router."
+  echo "❌ Không thấy package.json. Hãy chạy trong thư mục repo arouter."
   exit 1
 fi
 
@@ -26,7 +26,7 @@ import fs from "fs/promises"
 import path from "path"
 
 const DATA_DIR = process.env.TOKEN_QUOTA_DATA_DIR || process.cwd()
-const DB_FILE = path.join(DATA_DIR, ".9router-token-quota.json")
+const DB_FILE = path.join(DATA_DIR, ".arouter-token-quota.json")
 
 const DEFAULT_DB = {
   apiKeys: [],
@@ -565,7 +565,7 @@ MJS
 node scripts/apply-token-quota-patch.mjs "$BACKUP_DIR"
 
 cat > README_TOKEN_LIMIT_FULL_VI.md <<'MD'
-# 9Router Token Limit Full Patch
+# Arouter Token Limit Full Patch
 
 Patch này thêm giới hạn token theo từng API key vào trang:
 
@@ -574,8 +574,8 @@ Patch này thêm giới hạn token theo từng API key vào trang:
 ## Chạy nhanh
 
 ```bash
-cd 9router
-bash setup-9router-token-limit.sh .
+cd arouter
+bash setup-arouter-token-limit.sh .
 npm install
 PORT=1508 NEXT_PUBLIC_BASE_URL=http://localhost:1508 npm run dev
 ```
@@ -625,7 +625,7 @@ Nếu vượt quota sẽ trả `429`:
 Mặc định lưu tại:
 
 ```txt
-.9router-token-quota.json
+.arouter-token-quota.json
 ```
 
 Có thể đổi bằng env:

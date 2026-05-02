@@ -1,7 +1,7 @@
 {
-  "name": "9router-app",
+  "name": "arouter-app",
   "version": "0.4.11",
-  "description": "9Router web dashboard",
+  "description": "Arouter web dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 1508",
@@ -9,7 +9,8 @@
     "start": "node scripts/start-runtime.mjs",
     "dev:bun": "bun --bun next dev --webpack --port 1508",
     "build:bun": "bun --bun next build --webpack && node scripts/prepare-standalone-static.mjs && node scripts/prepare-runtime.mjs",
-    "start:bun": "NODE_ENV=production bun scripts/start-runtime.mjs"
+    "start:bun": "NODE_ENV=production bun scripts/start-runtime.mjs",
+    "sync:skills": "node scripts/sync-server-skills.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

@@ -1,7 +1,17 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- reason: provider icons are local dynamic assets with inline fallback rendering. */
+
 import { useState } from "react";
 import PropTypes from "prop-types";
+
+function normalizeProviderIconSrc(src) {
+  if (typeof src !== "string") return src;
+  return src
+    .replace(/\/providers\/openai-compatible-[^/]+\.png$/, "/providers/openai.png")
+    .replace(/\/providers\/anthropic-compatible-[^/]+\.png$/, "/providers/anthropic.png")
+    .replace(/\/providers\/custom-embedding-[^/]+\.png$/, "/providers/openai.png");
+}
 
 export default function ProviderIcon({
   src,
@@ -31,7 +41,7 @@ export default function ProviderIcon({
 
   return (
     <img
-      src={src}
+      src={normalizeProviderIconSrc(src)}
       alt={alt}
       width={size}
       height={size}

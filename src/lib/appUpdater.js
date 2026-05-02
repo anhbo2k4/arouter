@@ -12,8 +12,8 @@ function killMitmByPidFile() {
   try {
     const mitmPidFile = path.join(
       process.platform === "win32"
-        ? path.join(process.env.APPDATA || "", "9router")
-        : path.join(os.homedir(), ".9router"),
+        ? path.join(process.env.APPDATA || "", "arouter")
+        : path.join(os.homedir(), ".arouter"),
       "mitm",
       ".mitm.pid"
     );
@@ -34,7 +34,7 @@ function killMitmByPidFile() {
   } catch { /* best effort */ }
 }
 
-// Collect PIDs of all 9router-related processes (excluding current)
+// Collect PIDs of all arouter-related processes (excluding current)
 function collectAppPids() {
   const pids = [];
   const platform = process.platform;
@@ -45,7 +45,7 @@ function collectAppPids() {
       const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
-        const isAppProcess = line.toLowerCase().includes("9router") || line.toLowerCase().includes("next-server");
+        const isAppProcess = line.toLowerCase().includes("arouter") || line.toLowerCase().includes("next-server");
         if (isAppProcess) {
           const match = line.match(/^"(\d+)"/);
           if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
@@ -65,7 +65,7 @@ function collectAppPids() {
     try {
       const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
       output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") || line.includes("next-server") || line.includes("cloudflared");
+        const isAppProcess = line.includes("arouter") || line.includes("next-server") || line.includes("cloudflared");
         if (isAppProcess) {
           const parts = line.trim().split(/\s+/);
           const pid = parts[1];
@@ -82,9 +82,9 @@ function collectAppPids() {
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "arouter");
   }
-  return path.join(os.homedir(), ".9router");
+  return path.join(os.homedir(), ".arouter");
 }
 
 function resolveBundledUpdaterPath() {
@@ -139,10 +139,10 @@ export async function killAppProcesses() {
   }
 }
 
-// Resolve npx/9router binary to relaunch after update (cross-platform)
+// Resolve npx/arouter binary to relaunch after update (cross-platform)
 function resolveRelaunchCommand() {
   const isWin = process.platform === "win32";
-  // Prefer `npx 9router` — works regardless of global bin path changes after npm i -g
+  // Prefer `npx arouter` — works regardless of global bin path changes after npm i -g
   const npx = isWin ? "npx.cmd" : "npx";
   return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
 }

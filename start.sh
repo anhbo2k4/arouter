@@ -1,4 +1,4 @@
-docker stop 9router
-docker rm 9router
-docker build -t 9router .
-docker run -d --name 9router -p 1508:1508 --env-file .env -v 9router-data:/app/data 9router
+docker stop arouter
+docker rm arouter
+docker build -t arouter .
+docker run -d --name arouter -p 1508:1508 --env-file .env -v arouter-data:/app/data arouter

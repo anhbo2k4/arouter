@@ -1,5 +1,5 @@
 export function buildTunnelPublicUrl(shortId) {
-  return shortId ? `https://r${shortId}.9router.com` : "";
+  return shortId ? `https://r${shortId}.arouter.com` : "";
 }
 
 export function buildTunnelApiUrl(tunnelUrl) {

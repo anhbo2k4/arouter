@@ -1,4 +1,4 @@
-# 9Router Token Limit Full Patch
+# Arouter Token Limit Full Patch
 
 Patch nay them gioi han token theo tung API key vao trang:
 
@@ -7,7 +7,7 @@ Patch nay them gioi han token theo tung API key vao trang:
 ## Chay nhanh
 
 ```bash
-cd 9router
+cd arouter
 npm install
 PORT=1508 NEXT_PUBLIC_BASE_URL=http://localhost:1508 npm run dev
 ```
@@ -23,7 +23,7 @@ http://localhost:1508/dashboard/endpoint
 Mac dinh luu tai:
 
 ```txt
-.9router-token-quota.json
+.arouter-token-quota.json
 ```
 
 Co the doi bang env:

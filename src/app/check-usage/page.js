@@ -807,7 +807,7 @@ export default function CheckUsagePage() {
       <div className="mx-auto w-full max-w-6xl">
         <header className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <div className="retro-badge retro-badge-cyan inline-flex">9router neural quota</div>
+            <div className="retro-badge retro-badge-cyan inline-flex">arouter neural quota</div>
             <h1 className="cyber-title mt-4 max-w-3xl text-4xl font-black tracking-normal text-[var(--retro-paper)] sm:text-5xl">
               Future quota command center
             </h1>
