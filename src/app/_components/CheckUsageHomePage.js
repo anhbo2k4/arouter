@@ -91,15 +91,6 @@ const FEATURE_PILLS = [
 
 const HOURLY_BARS = [30, 42, 36, 28, 24, 18, 22, 34, 48, 56, 62, 54, 46, 52, 58, 64, 60, 48, 36, 28, 22, 18, 16, 14];
 const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
-const HERO_DEMAND_SERIES = [
-  { label: "T2", value: 92 },
-  { label: "T3", value: 138 },
-  { label: "T4", value: 176 },
-  { label: "T5", value: 214 },
-  { label: "T6", value: 268 },
-  { label: "T7", value: 342 },
-  { label: "CN", value: 296 },
-];
 
 function formatNumber(value) {
   if (value === null || value === undefined) return "Unlimited";
@@ -432,114 +423,43 @@ function QuotaEpochWidget({ countdown }) {
   );
 }
 
-function HeroDemandChart() {
-  const width = 560;
-  const height = 190;
-  const values = HERO_DEMAND_SERIES.map((entry) => entry.value);
-  const scaleCeiling = Math.max(...PRICING_OPTIONS.map((plan) => Math.round(plan.tokens / 1_000_000)), ...values);
-  const { coords, linePath, areaPath, maxValue } = getChartGeometry(values, width, height, {
-    maxValue: scaleCeiling,
-    paddingTop: 14,
-    paddingBottom: 18,
-  });
-  const averageDemand = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-  const peakDemand = Math.max(...values);
-
-  return (
-    <div className="hero-chart-panel reveal-item" data-reveal>
-      <div className="hero-chart-head">
-        <div>
-          <p className="mono-eyebrow">DEMAND MAP</p>
-          <h3 className="hero-chart-title">Daily demand profile against visible plan thresholds</h3>
-        </div>
-        <div className="hero-chart-chip">Live commercial view</div>
-      </div>
-
-      <div className="hero-chart-metrics">
-        <div className="hero-chart-metric">
-          <span className="hero-chart-metric-label">Peak</span>
-          <strong>{peakDemand}M/day</strong>
-        </div>
-        <div className="hero-chart-metric">
-          <span className="hero-chart-metric-label">Avg</span>
-          <strong>{averageDemand}M/day</strong>
-        </div>
-        <div className="hero-chart-metric">
-          <span className="hero-chart-metric-label">Best fit</span>
-          <strong>Popular</strong>
-        </div>
-      </div>
-
-      <div className="hero-chart-stage">
-        <div className="hero-chart-columns" aria-hidden="true">
-          {values.map((value, index) => (
-            <div key={HERO_DEMAND_SERIES[index].label} className="hero-chart-column">
-              <span style={{ height: `${Math.max(10, (value / maxValue) * 100)}%` }} />
-            </div>
-          ))}
-        </div>
-
-        <svg viewBox={`0 0 ${width} ${height}`} className="hero-chart-svg" aria-hidden="true">
-          <defs>
-            <linearGradient id="hero-chart-fill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="rgba(20,210,150,0.22)" />
-              <stop offset="100%" stopColor="rgba(20,210,150,0)" />
-            </linearGradient>
-          </defs>
-          <path d={areaPath} className="hero-chart-area" fill="url(#hero-chart-fill)" />
-          <path d={linePath} className="hero-chart-line" />
-          {coords.map((point, index) => (
-            <circle key={HERO_DEMAND_SERIES[index].label} cx={point.x} cy={point.y} r="4" className="hero-chart-dot" />
-          ))}
-        </svg>
-
-        {PRICING_OPTIONS.map((plan) => {
-          const thresholdValue = Math.round(plan.tokens / 1_000_000);
-          const top = height - 18 - (thresholdValue / maxValue) * (height - 32);
-          return (
-            <div
-              key={plan.id}
-              className={`hero-threshold ${plan.featured ? "hero-threshold-featured" : ""}`}
-              style={{ top }}
-            >
-              <span>{`${plan.label} ${thresholdValue}M`}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="hero-chart-footer">
-        {HERO_DEMAND_SERIES.map((entry) => (
-          <span key={entry.label}>{entry.label}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function PlanCapacityChart({ plan }) {
   return (
     <div className="plan-capacity-panel">
       <div className="plan-capacity-head">
-        <span className="mono-eyebrow">CAPACITY SHAPE</span>
-        <span className="plan-capacity-value">{`${formatTokens(plan.tokens)}/ngày`}</span>
+        <div>
+          <span className="mono-eyebrow">CAPACITY PROFILE</span>
+          <p className="plan-capacity-value">{`${formatTokens(plan.tokens)}/ngày`}</p>
+        </div>
+        <span className="plan-capacity-badge">1 KEY</span>
       </div>
 
-      <div className="plan-capacity-bars" aria-hidden="true">
-        {plan.dailyCurve.map((value, index) => (
-          <div key={`${plan.id}-${WEEKDAY_LABELS[index]}`} className="plan-capacity-bar">
-            <span style={{ height: `${value}%` }} />
-          </div>
-        ))}
+      <div className="plan-capacity-meta">
+        <span>7 DAY ACCESS</span>
+        <span>2-3 DEVICES RECOMMENDED</span>
       </div>
 
-      <div className="plan-capacity-labels">
-        {WEEKDAY_LABELS.map((day) => (
-          <span key={`${plan.id}-${day}`}>{day}</span>
-        ))}
+      <div className="plan-capacity-visual">
+        <div className="plan-capacity-grid" aria-hidden="true" />
+
+        <div className="plan-capacity-bars" aria-hidden="true">
+          {plan.dailyCurve.map((value, index) => (
+            <div key={`${plan.id}-${WEEKDAY_LABELS[index]}`} className="plan-capacity-bar">
+              <div className="plan-capacity-track">
+                <span style={{ height: `${value}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="plan-capacity-labels">
+          {WEEKDAY_LABELS.map((day) => (
+            <span key={`${plan.id}-${day}`}>{day}</span>
+          ))}
+        </div>
       </div>
 
-      <p className="plan-capacity-note">1 key dùng trên nhiều thiết bị, nhưng nên giữ ổn định ở 2-3 thiết bị để trải nghiệm bền hơn.</p>
+      <p className="plan-capacity-note">Một key dùng được trên nhiều thiết bị, nhưng nên giữ ổn định ở 2-3 thiết bị để throughput và session usage đều hơn.</p>
     </div>
   );
 }
@@ -1431,28 +1351,6 @@ export default function CheckUsageHomePage() {
           animation-delay: 2.8s;
         }
 
-        .hero-chart-panel {
-          position: relative;
-          overflow: hidden;
-          margin-top: 20px;
-          padding: 18px;
-          border-radius: var(--radius-xl);
-          border: 1px solid var(--border-default);
-          background: linear-gradient(180deg, var(--surface-tint-strong), var(--surface-tint));
-          box-shadow: var(--surface-shadow);
-        }
-
-        .hero-chart-panel::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          background: linear-gradient(120deg, transparent 0%, rgba(20, 210, 150, 0.06) 45%, transparent 90%);
-          transform: translateX(-120%);
-          animation: chartSweep 9s ease-in-out infinite;
-        }
-
-        .hero-chart-head,
         .plan-capacity-head,
         .usage-compare-head {
           display: flex;
@@ -1461,15 +1359,6 @@ export default function CheckUsageHomePage() {
           gap: 14px;
         }
 
-        .hero-chart-title {
-          margin-top: 6px;
-          font-size: 18px;
-          font-weight: 600;
-          line-height: 1.35;
-          letter-spacing: -0.02em;
-        }
-
-        .hero-chart-chip,
         .usage-compare-pill {
           border-radius: 999px;
           border: 1px solid var(--border-accent);
@@ -1481,160 +1370,6 @@ export default function CheckUsageHomePage() {
           text-transform: uppercase;
           padding: 5px 10px;
           white-space: nowrap;
-        }
-
-        .hero-chart-metrics {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-          margin-top: 16px;
-        }
-
-        .hero-chart-metric {
-          padding: 12px 14px;
-          border-radius: 14px;
-          border: 1px solid var(--border-default);
-          background: rgba(255, 255, 255, 0.34);
-        }
-
-        .hero-chart-metric-label {
-          display: block;
-          color: var(--text-muted);
-          font-size: 10px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .hero-chart-metric strong {
-          display: block;
-          margin-top: 7px;
-          color: var(--text-primary);
-          font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-          font-size: 16px;
-          font-weight: 500;
-        }
-
-        .hero-chart-stage {
-          position: relative;
-          height: 190px;
-          margin-top: 18px;
-          padding: 18px 18px 22px;
-          border-radius: 16px;
-          border: 1px solid var(--border-default);
-          background:
-            linear-gradient(180deg, rgba(20, 210, 150, 0.03), transparent 55%),
-            var(--bg-elevated);
-          overflow: hidden;
-        }
-
-        .hero-chart-columns {
-          position: absolute;
-          inset: 18px 18px 22px;
-          display: grid;
-          grid-template-columns: repeat(7, minmax(0, 1fr));
-          gap: 12px;
-          align-items: end;
-        }
-
-        .hero-chart-column {
-          display: flex;
-          align-items: end;
-          height: 100%;
-        }
-
-        .hero-chart-column span {
-          width: 100%;
-          border-radius: 999px 999px 5px 5px;
-          background: linear-gradient(180deg, rgba(20, 210, 150, 0.75), rgba(20, 210, 150, 0.14));
-          opacity: 0.38;
-          animation: chartBarRise 7.2s ease-in-out infinite;
-        }
-
-        .hero-chart-column:nth-child(2) span {
-          animation-delay: 0.4s;
-        }
-
-        .hero-chart-column:nth-child(3) span {
-          animation-delay: 0.8s;
-        }
-
-        .hero-chart-column:nth-child(4) span {
-          animation-delay: 1.2s;
-        }
-
-        .hero-chart-column:nth-child(5) span {
-          animation-delay: 1.6s;
-        }
-
-        .hero-chart-column:nth-child(6) span {
-          animation-delay: 2s;
-        }
-
-        .hero-chart-column:nth-child(7) span {
-          animation-delay: 2.4s;
-        }
-
-        .hero-chart-svg {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-        }
-
-        .hero-chart-line {
-          fill: none;
-          stroke: var(--accent);
-          stroke-width: 3;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-          stroke-dasharray: 1000;
-          stroke-dashoffset: 1000;
-          animation: chartDraw 1.6s ease forwards, chartPulse 8s ease-in-out infinite 1.6s;
-        }
-
-        .hero-chart-dot {
-          fill: var(--bg-surface);
-          stroke: var(--accent);
-          stroke-width: 2;
-        }
-
-        .hero-threshold {
-          position: absolute;
-          left: 18px;
-          right: 18px;
-          border-top: 1px dashed rgba(20, 210, 150, 0.16);
-        }
-
-        .hero-threshold span {
-          position: absolute;
-          right: 0;
-          top: -11px;
-          padding: 2px 8px;
-          border-radius: 999px;
-          border: 1px solid var(--border-default);
-          background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-          color: var(--text-muted);
-          font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-          font-size: 10px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .hero-threshold-featured span {
-          color: var(--accent);
-          border-color: var(--border-accent);
-        }
-
-        .hero-chart-footer {
-          display: grid;
-          grid-template-columns: repeat(7, minmax(0, 1fr));
-          gap: 12px;
-          margin-top: 12px;
-          color: var(--text-muted);
-          font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-          font-size: 10px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
         }
 
         .cursor {
@@ -1970,12 +1705,15 @@ export default function CheckUsageHomePage() {
           position: relative;
           overflow: hidden;
           margin-top: 18px;
-          padding: 14px;
-          border-radius: 14px;
-          border: 1px solid var(--border-default);
-          background: rgba(255, 255, 255, 0.28);
+          padding: 16px;
+          border-radius: 12px;
+          border: 1px solid var(--border-strong);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
+            color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
           display: grid;
-          gap: 10px;
+          gap: 12px;
         }
 
         .plan-capacity-panel::after {
@@ -1983,77 +1721,139 @@ export default function CheckUsageHomePage() {
           position: absolute;
           inset: 0;
           pointer-events: none;
-          background: linear-gradient(120deg, transparent 15%, rgba(255, 255, 255, 0.08) 50%, transparent 85%);
+          background: linear-gradient(120deg, transparent 18%, rgba(255, 255, 255, 0.05) 50%, transparent 82%);
           transform: translateX(-120%);
-          animation: chartSweep 10s ease-in-out infinite;
+          animation: chartSweep 16s ease-in-out infinite;
         }
 
         .plan-capacity-value {
           color: var(--accent);
           font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-          font-size: 12px;
+          font-size: 17px;
+          line-height: 1.2;
+          letter-spacing: -0.02em;
+          margin-top: 6px;
+        }
+
+        .plan-capacity-badge {
+          padding: 5px 9px;
+          border-radius: 999px;
+          border: 1px solid var(--border-default);
+          background: rgba(255, 255, 255, 0.02);
+          color: var(--text-secondary);
+          font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
+        .plan-capacity-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          color: var(--text-muted);
+          font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .plan-capacity-meta span {
+          position: relative;
+          padding-left: 12px;
+        }
+
+        .plan-capacity-meta span::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 50%;
+          width: 5px;
+          height: 5px;
+          border-radius: 999px;
+          background: rgba(20, 210, 150, 0.5);
+          transform: translateY(-50%);
+        }
+
+        .plan-capacity-visual {
+          position: relative;
+          overflow: hidden;
+          padding: 14px 12px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border-default);
+          background:
+            linear-gradient(180deg, rgba(20, 210, 150, 0.03), transparent 55%),
+            rgba(255, 255, 255, 0.015);
+        }
+
+        .plan-capacity-grid {
+          position: absolute;
+          inset: 10px 12px 26px;
+          border-radius: 8px;
+          background-image:
+            linear-gradient(to top, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+            linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+          background-size: 100% 25%, calc(100% / 7) 100%;
+          opacity: 0.7;
         }
 
         .plan-capacity-bars {
           display: grid;
           grid-template-columns: repeat(7, minmax(0, 1fr));
-          gap: 8px;
+          gap: 10px;
           align-items: end;
-          height: 72px;
+          height: 92px;
+          position: relative;
         }
 
         .plan-capacity-bar {
           display: flex;
+          justify-content: center;
           align-items: end;
           height: 100%;
         }
 
-        .plan-capacity-bar span {
-          width: 100%;
-          border-radius: 999px 999px 5px 5px;
-          background: linear-gradient(180deg, rgba(20, 210, 150, 0.92), rgba(20, 210, 150, 0.18));
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-          animation: chartBarRise 6.8s ease-in-out infinite;
+        .plan-capacity-track {
+          position: relative;
+          width: 8px;
+          height: 100%;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
         }
 
-        .plan-capacity-bar:nth-child(2) span {
-          animation-delay: 0.35s;
+        .plan-capacity-track span {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(20, 210, 150, 0.98), rgba(20, 210, 150, 0.26));
+          box-shadow:
+            0 0 0 1px rgba(20, 210, 150, 0.12),
+            inset 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
-        .plan-capacity-bar:nth-child(3) span {
-          animation-delay: 0.7s;
-        }
-
-        .plan-capacity-bar:nth-child(4) span {
-          animation-delay: 1.05s;
-        }
-
-        .plan-capacity-bar:nth-child(5) span {
-          animation-delay: 1.4s;
-        }
-
-        .plan-capacity-bar:nth-child(6) span {
-          animation-delay: 1.75s;
-        }
-
-        .plan-capacity-bar:nth-child(7) span {
-          animation-delay: 2.1s;
+        .plan-capacity-bar:nth-child(4) .plan-capacity-track span {
+          background: linear-gradient(180deg, rgba(20, 210, 150, 1), rgba(20, 210, 150, 0.34));
         }
 
         .plan-capacity-labels {
           display: grid;
           grid-template-columns: repeat(7, minmax(0, 1fr));
-          gap: 8px;
+          gap: 10px;
           color: var(--text-muted);
           font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
           font-size: 10px;
           text-align: center;
+          margin-top: 10px;
         }
 
         .plan-capacity-note {
           color: var(--text-secondary);
           font-size: 12px;
-          line-height: 1.55;
+          line-height: 1.6;
         }
 
         .plan-specs {
@@ -2933,9 +2733,6 @@ export default function CheckUsageHomePage() {
             grid-column: span 2;
           }
 
-          .hero-chart-metrics {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
         }
 
         @media (max-width: 767px) {
@@ -2969,11 +2766,6 @@ export default function CheckUsageHomePage() {
             grid-template-columns: 1fr;
           }
 
-          .hero-chart-metrics {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .hero-chart-head,
           .usage-compare-head,
           .plan-capacity-head {
             flex-direction: column;
@@ -3295,9 +3087,6 @@ export default function CheckUsageHomePage() {
           .router-home::after,
           .hero-signal-card,
           .hero-signal-card::after,
-          .hero-chart-panel::after,
-          .hero-chart-line,
-          .hero-chart-column span,
           .quota-widget,
           .quota-widget::after,
           .checker-panel,
@@ -3402,7 +3191,6 @@ export default function CheckUsageHomePage() {
             ))}
           </div>
 
-          <HeroDemandChart />
         </div>
 
         <QuotaEpochWidget countdown={countdown} />
