@@ -3,6 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { safeEnqueue } from "./safeStreamEnqueue.js";
 
 export { COLORS, formatSSE };
 
@@ -281,7 +282,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            safeEnqueue(controller, sharedEncoder.encode(output));
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
@@ -304,7 +305,7 @@ export function createSSEStream(options = {}) {
           const quotaEvent = buildQuotaLimitEvent(quotaStatus);
           if (quotaEvent) {
             reqLogger?.appendConvertedChunk?.(quotaEvent);
-            controller.enqueue(sharedEncoder.encode(quotaEvent));
+            safeEnqueue(controller, sharedEncoder.encode(quotaEvent));
           }
           
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -313,7 +314,7 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          safeEnqueue(controller, sharedEncoder.encode(doneOutput));
           return;
         }
 
@@ -333,7 +334,7 @@ export function createSSEStream(options = {}) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
+                safeEnqueue(controller, sharedEncoder.encode(output));
               }
             }
           }
@@ -352,7 +353,7 @@ export function createSSEStream(options = {}) {
           for (const item of flushed) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            safeEnqueue(controller, sharedEncoder.encode(output));
           }
         }
 
@@ -377,12 +378,12 @@ export function createSSEStream(options = {}) {
         const quotaEvent = buildQuotaLimitEvent(quotaStatus);
         if (quotaEvent) {
           reqLogger?.appendConvertedChunk?.(quotaEvent);
-          controller.enqueue(sharedEncoder.encode(quotaEvent));
+          safeEnqueue(controller, sharedEncoder.encode(quotaEvent));
         }
 
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        safeEnqueue(controller, sharedEncoder.encode(doneOutput));
       } catch (error) {
         console.log("Error in flush:", error);
       }

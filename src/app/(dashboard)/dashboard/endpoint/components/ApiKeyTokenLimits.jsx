@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatDateTimeLocal, mergeRowEditsWithDirtyRows } from "./apiKeyTokenLimitState";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString();
@@ -16,14 +17,6 @@ function remaining(used, limit) {
 
 function percent(used, limit) {
   return Number(limit || 0) > 0 ? Math.min(100, Math.round((Number(used || 0) / Number(limit || 0)) * 100)) : 0;
-}
-
-function formatDateTimeLocal(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  const pad = (part) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function addDaysLocal(days) {
@@ -70,6 +63,7 @@ export default function ApiKeyTokenLimits() {
   const [liveConnected, setLiveConnected] = useState(false);
   const refreshTimerRef = useRef(null);
   const loadingRef = useRef(false);
+  const dirtyRowsRef = useRef(dirtyRows);
   const [form, setForm] = useState({
     name: "",
     window: "daily",
@@ -79,6 +73,10 @@ export default function ApiKeyTokenLimits() {
     allowedModels: "",
     expiresAt: "",
   });
+
+  useEffect(() => {
+    dirtyRowsRef.current = dirtyRows;
+  }, [dirtyRows]);
 
   const load = useCallback(async () => {
     if (loadingRef.current) return;
@@ -92,25 +90,11 @@ export default function ApiKeyTokenLimits() {
       const nextKeys = data.keys || [];
       setKeys(nextKeys);
       setLastUpdatedAt(data.updatedAt || new Date().toISOString());
-      setRowEdits((prev) =>
-        Object.fromEntries(
-          nextKeys.map((key) => {
-            const current = {
-              window: key.quota?.window || "daily",
-              maxTotalTokens: Number(key.quota?.maxTotalTokens || 0),
-              maxInputTokens: Number(key.quota?.maxInputTokens || 0),
-              maxOutputTokens: Number(key.quota?.maxOutputTokens || 0),
-              allowedModels: Array.isArray(key.allowedModels) ? key.allowedModels.join(", ") : "",
-              expiresAt: formatDateTimeLocal(key.expiresAt),
-            };
-            return [key.id, dirtyRows[key.id] ? prev[key.id] || current : current];
-          })
-        )
-      );
+      setRowEdits((prev) => mergeRowEditsWithDirtyRows(nextKeys, prev, dirtyRowsRef.current));
     } finally {
       loadingRef.current = false;
     }
-  }, [dirtyRows]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -121,9 +105,10 @@ export default function ApiKeyTokenLimits() {
       load();
     }, AUTO_REFRESH_MS);
     return () => clearInterval(t);
-  }, [dirtyRows, load]);
+  }, [load]);
 
   useEffect(() => {
+    // Keep one live SSE connection while editing; reconnect churn was spamming cloudflared logs.
     const events = new EventSource("/api/usage/stream");
     events.onopen = () => setLiveConnected(true);
     events.onerror = () => setLiveConnected(false);
@@ -139,7 +124,7 @@ export default function ApiKeyTokenLimits() {
       events.close();
       setLiveConnected(false);
     };
-  }, [dirtyRows, load]);
+  }, [load]);
 
   async function createKey() {
     setLoading(true);

@@ -1,11 +1,8 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="6" fill="url(#gradient)"/>
-  <text x="16" y="24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="white" text-anchor="middle">9</text>
-  <defs>
-    <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f97815"/>
-      <stop offset="1" stop-color="#c2590a"/>
-    </linearGradient>
-  </defs>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M95.1915 18C91.3354 18 87.8468 20.3118 86.3607 23.8671L4.94219 218.867C2.28709 225.226 6.95525 232 13.846 232H63.1233C67.2044 232 70.8515 229.438 72.2388 225.6L85.2323 189.65H170.768L183.761 225.6C185.149 229.438 188.796 232 192.877 232H242.154C249.045 232 253.713 225.226 251.058 218.867L169.639 23.8671C168.153 20.3118 164.665 18 160.808 18H95.1915ZM106.357 49L36.449 217H55.6736L68.667 181.05C70.0543 177.212 73.7014 174.65 77.7825 174.65H178.218C182.299 174.65 185.946 177.212 187.333 181.05L200.326 217H219.551L149.643 49H106.357ZM127.235 83.194C129.13 78.5258 135.871 78.5258 137.765 83.194L171.858 167.194C174.543 173.808 169.677 181.05 162.534 181.05H102.466C95.3233 181.05 90.4569 173.808 93.1419 167.194L127.235 83.194ZM132.5 111.77L111.977 162.35H153.023L132.5 111.77Z"
+    fill="#050709"
+  />
 </svg>
-
