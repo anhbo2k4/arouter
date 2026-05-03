@@ -59,10 +59,44 @@ function rowTone({ expired, quotaLocked, over }) {
 }
 
 const AUTO_REFRESH_MS = 60_000;
+const GOVERNOR_FALLBACK_PRESETS = [
+  "openai/gpt-4o-mini",
+  "google/gemini-2.5-flash",
+  "if/qwen3-coder-flash",
+  "if/qwen3-32b",
+];
+const DEFAULT_GOVERNOR_STATE = {
+  settings: {
+    enabled: true,
+    mode: "safe",
+    fallbackModel: "openai/gpt-4o-mini",
+    maxPromptCharsForTrivial: 180,
+    premiumModels: ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex"],
+  },
+  summary: {
+    preserved: 0,
+    downgraded: 0,
+    governed: 0,
+    ignored: 0,
+    downgradeRate: 0,
+    keysTouched: 0,
+    reasons: {},
+  },
+  byKey: [],
+};
 
 export default function ApiKeyTokenLimits() {
   const [keys, setKeys] = useState([]);
   const [insights, setInsights] = useState({ estimatedCharsSaved7d: 0, estimatedCharsSavedAll: 0, activeKeys: [], recentKeyLogs: [] });
+  const [governor, setGovernor] = useState(DEFAULT_GOVERNOR_STATE);
+  const [governorDraft, setGovernorDraft] = useState({
+    enabled: true,
+    fallbackModel: "openai/gpt-4o-mini",
+    maxPromptCharsForTrivial: 180,
+    premiumModels: "gpt-5.5, gpt-5.4, gpt-5.3-codex",
+  });
+  const [governorSaving, setGovernorSaving] = useState(false);
+  const [governorDirty, setGovernorDirty] = useState(false);
   const [secret, setSecret] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState("");
@@ -80,6 +114,7 @@ export default function ApiKeyTokenLimits() {
   const refreshTimerRef = useRef(null);
   const loadingRef = useRef(false);
   const dirtyRowsRef = useRef(dirtyRows);
+  const governorDirtyRef = useRef(governorDirty);
   const [form, setForm] = useState({
     name: "",
     window: "daily",
@@ -95,6 +130,10 @@ export default function ApiKeyTokenLimits() {
     dirtyRowsRef.current = dirtyRows;
   }, [dirtyRows]);
 
+  useEffect(() => {
+    governorDirtyRef.current = governorDirty;
+  }, [governorDirty]);
+
   const load = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
@@ -107,6 +146,18 @@ export default function ApiKeyTokenLimits() {
       const nextKeys = data.keys || [];
       setKeys(nextKeys);
       setInsights(data.insights || { estimatedCharsSaved7d: 0, estimatedCharsSavedAll: 0, activeKeys: [], recentKeyLogs: [] });
+      const nextGovernor = data.governor || DEFAULT_GOVERNOR_STATE;
+      setGovernor(nextGovernor);
+      if (!governorDirtyRef.current) {
+        setGovernorDraft({
+          enabled: nextGovernor.settings?.enabled !== false,
+          fallbackModel: nextGovernor.settings?.fallbackModel || "openai/gpt-4o-mini",
+          maxPromptCharsForTrivial: Number(nextGovernor.settings?.maxPromptCharsForTrivial || 180),
+          premiumModels: Array.isArray(nextGovernor.settings?.premiumModels)
+            ? nextGovernor.settings.premiumModels.join(", ")
+            : "gpt-5.5, gpt-5.4, gpt-5.3-codex",
+        });
+      }
       setLastUpdatedAt(data.updatedAt || new Date().toISOString());
       setRowEdits((prev) => mergeRowEditsWithDirtyRows(nextKeys, prev, dirtyRowsRef.current));
     } finally {
@@ -239,6 +290,29 @@ export default function ApiKeyTokenLimits() {
     await load();
   }
 
+  async function saveGovernorSettings() {
+    setGovernorSaving(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          softModelGovernorEnabled: !!governorDraft.enabled,
+          softModelGovernorFallbackModel: String(governorDraft.fallbackModel || "").trim() || "openai/gpt-4o-mini",
+          softModelGovernorMaxPromptCharsForTrivial: Number(governorDraft.maxPromptCharsForTrivial || 180),
+          softModelGovernorPremiumModels: String(governorDraft.premiumModels || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        }),
+      });
+      setGovernorDirty(false);
+      await load();
+    } finally {
+      setGovernorSaving(false);
+    }
+  }
+
   async function copyKey(id, keyValue) {
     try {
       await navigator.clipboard.writeText(keyValue || "");
@@ -288,6 +362,8 @@ export default function ApiKeyTokenLimits() {
   }, [keys, keySearch, statusFilter, sortBy]);
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : "";
   const liveKeyCount = insights.activeKeys?.length || 0;
+  const governorSummary = governor.summary || DEFAULT_GOVERNOR_STATE.summary;
+  const governorKeys = governor.byKey || [];
   const inputClass =
     "rounded-xl border border-neutral-800 bg-neutral-950/80 px-3 py-2.5 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20";
   const compactInputClass =
@@ -359,6 +435,147 @@ export default function ApiKeyTokenLimits() {
           <code className="mt-2 block break-all rounded-lg border border-amber-500/20 bg-black/40 p-3 text-sm text-amber-100">{secret}</code>
         </div>
       ) : null}
+
+      <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-neutral-950/55 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-neutral-200">Soft Governor</div>
+            <div className="text-xs text-neutral-500">Control premium-model protection and monitor how often premium requests are preserved versus safely downgraded.</div>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200">
+            <span className={`h-2 w-2 rounded-full ${governorDraft.enabled ? "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]" : "bg-neutral-500"}`} />
+            {governorDraft.enabled ? "Governor enabled" : "Governor disabled"}
+          </div>
+        </div>
+
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-xl border border-cyan-500/20 bg-neutral-950/70 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Preserved</div>
+            <div className="mt-2 text-lg font-bold text-cyan-200">{fmt(governorSummary.preserved || 0)}</div>
+          </div>
+          <div className="rounded-xl border border-amber-500/20 bg-neutral-950/70 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Downgraded</div>
+            <div className="mt-2 text-lg font-bold text-amber-200">{fmt(governorSummary.downgraded || 0)}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-500/20 bg-neutral-950/70 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Downgrade Rate</div>
+            <div className="mt-2 text-lg font-bold text-emerald-300">{fmt(governorSummary.downgradeRate || 0)}%</div>
+          </div>
+          <div className="rounded-xl border border-orange-500/20 bg-neutral-950/70 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Keys Touched</div>
+            <div className="mt-2 text-lg font-bold text-orange-200">{fmt(governorSummary.keysTouched || 0)}</div>
+          </div>
+          <div className="rounded-xl border border-neutral-700 bg-neutral-950/70 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Ignored</div>
+            <div className="mt-2 text-lg font-bold text-neutral-200">{fmt(governorSummary.ignored || 0)}</div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-12">
+          <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-black/24 px-3 py-3 lg:col-span-3">
+            <input
+              type="checkbox"
+              checked={!!governorDraft.enabled}
+              onChange={(e) => {
+                setGovernorDirty(true);
+                setGovernorDraft((prev) => ({ ...prev, enabled: e.target.checked }));
+              }}
+              className="h-4 w-4 rounded border-neutral-600 bg-neutral-900 text-cyan-400 focus:ring-cyan-500/30"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-neutral-200">Enable governor</span>
+              <span className="block text-xs text-neutral-500">Only trivial premium requests are downgraded.</span>
+            </span>
+          </label>
+          <input
+            className={`${inputClass} lg:col-span-3`}
+            placeholder="Fallback model"
+            value={governorDraft.fallbackModel}
+            onChange={(e) => {
+              setGovernorDirty(true);
+              setGovernorDraft((prev) => ({ ...prev, fallbackModel: e.target.value }));
+            }}
+          />
+          <input
+            className={`${inputClass} lg:col-span-2`}
+            type="number"
+            min="40"
+            step="10"
+            placeholder="Trivial chars"
+            value={governorDraft.maxPromptCharsForTrivial}
+            onChange={(e) => {
+              setGovernorDirty(true);
+              setGovernorDraft((prev) => ({ ...prev, maxPromptCharsForTrivial: e.target.value }));
+            }}
+          />
+          <input
+            className={`${inputClass} lg:col-span-4`}
+            placeholder="Premium models, comma separated"
+            value={governorDraft.premiumModels}
+            onChange={(e) => {
+              setGovernorDirty(true);
+              setGovernorDraft((prev) => ({ ...prev, premiumModels: e.target.value }));
+            }}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="text-xs text-neutral-500">Fallback presets:</div>
+          {GOVERNOR_FALLBACK_PRESETS.map((preset) => (
+            <button
+              key={`governor-preset-${preset}`}
+              type="button"
+              className={quotaPresetButtonClass}
+              onClick={() => {
+                setGovernorDirty(true);
+                setGovernorDraft((prev) => ({ ...prev, fallbackModel: preset }));
+              }}
+            >
+              {preset}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={governorSaving}
+            onClick={saveGovernorSettings}
+            className="ml-auto rounded-xl border border-cyan-400/40 bg-cyan-600 px-4 py-2 text-sm font-bold text-white shadow-[0_14px_36px_rgba(6,182,212,0.24)] transition hover:bg-cyan-500 disabled:opacity-60"
+          >
+            {governorSaving ? "Saving..." : "Save governor"}
+          </button>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-800 bg-black/24">
+          <div className="grid grid-cols-[minmax(140px,1.1fr)_90px_110px_90px_minmax(170px,1.3fr)_minmax(140px,1fr)] gap-3 border-b border-neutral-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            <div>API key</div>
+            <div>Preserved</div>
+            <div>Downgraded</div>
+            <div>Rate</div>
+            <div>Latest route</div>
+            <div>Top reason</div>
+          </div>
+          {governorKeys.length ? (
+            governorKeys.slice(0, 8).map((item) => (
+              <div
+                key={`governor-row-${item.keyId || item.maskedKey}`}
+                className="grid grid-cols-[minmax(140px,1.1fr)_90px_110px_90px_minmax(170px,1.3fr)_minmax(140px,1fr)] gap-3 border-b border-neutral-900/80 px-3 py-3 text-sm text-neutral-200 last:border-b-0"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-white">{item.keyName}</div>
+                  <div className="truncate text-[11px] text-neutral-500">{item.maskedKey}</div>
+                </div>
+                <div className="font-mono text-cyan-200">{fmt(item.preserved || 0)}</div>
+                <div className="font-mono text-amber-200">{fmt(item.downgraded || 0)}</div>
+                <div className="font-mono text-emerald-300">{fmt(item.downgradeRate || 0)}%</div>
+                <div className="min-w-0 text-[12px] text-neutral-300">
+                  <div className="truncate">{item.latestRequestedModel || "Unknown"} {"->"} {item.latestRoutedModel || "Unknown"}</div>
+                  <div className="truncate text-[11px] text-neutral-500">{item.lastDecision || "n/a"}</div>
+                </div>
+                <div className="truncate text-[12px] text-neutral-400">{item.topReason || "n/a"}</div>
+              </div>
+            ))
+          ) : (
+            <div className="px-3 py-5 text-sm text-neutral-500">No governed request data yet. Generate a few premium requests first and this table will fill in automatically.</div>
+          )}
+        </div>
+      </div>
 
       <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950/55 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="mb-3 flex items-center justify-between gap-3">

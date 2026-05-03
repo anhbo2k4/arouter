@@ -14,6 +14,8 @@ import { nextBuild } from "../../open-sse/rtk/filters/nextBuild.js";
 import { npmInstall } from "../../open-sse/rtk/filters/npmInstall.js";
 import { testRunner } from "../../open-sse/rtk/filters/testRunner.js";
 import { lintOutput } from "../../open-sse/rtk/filters/lintOutput.js";
+import { stackTrace } from "../../open-sse/rtk/filters/stackTrace.js";
+import { shellTranscript } from "../../open-sse/rtk/filters/shellTranscript.js";
 import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 
@@ -134,6 +136,42 @@ function makeNpmInstallOutput() {
   ].join("\n");
 }
 
+function makeStackTraceOutput() {
+  return [
+    "TypeError: Cannot read properties of undefined (reading 'total')",
+    "    at renderDashboard (src/app/dashboard/page.js:42:12)",
+    "    at DashboardPage (src/app/dashboard/page.js:60:5)",
+    "    at renderWithHooks (node_modules/react-dom/cjs/react-dom.development.js:15486:18)",
+    "    at mountIndeterminateComponent (node_modules/react-dom/cjs/react-dom.development.js:20103:13)",
+    "    at beginWork (node_modules/react-dom/cjs/react-dom.development.js:21626:16)",
+    "Caused by: Error: Stats payload was empty",
+    "    at fetchStats (src/lib/stats.js:18:9)",
+    "    at async DashboardPage (src/app/dashboard/page.js:58:3)",
+    ...Array.from({ length: 25 }, () => "    at processTicksAndRejections (node:internal/process/task_queues:95:5)"),
+    "Build failed with 1 error.",
+  ].join("\n");
+}
+
+function makeShellTranscriptOutput() {
+  return [
+    "$ npm run build",
+    "> arouter-app@0.4.11 build",
+    "> next build",
+    "Creating an optimized production build ...",
+    "Creating an optimized production build ...",
+    "Creating an optimized production build ...",
+    "info - Loaded env from .env.local",
+    "info - Loaded env from .env.local",
+    "warn - Cache miss for page chunk",
+    "warn - Cache miss for page chunk",
+    "Error: listen EADDRINUSE: address already in use 0.0.0.0:1508",
+    "    at Server.setupListenHandle [as _listen2] (node:net:1811:16)",
+    "$ netstat -ano | findstr :1508",
+    "TCP    0.0.0.0:1508    0.0.0.0:0    LISTENING    24000",
+    "Build failed with exit code 1",
+  ].join("\n");
+}
+
 describe("RTK flag", () => {
   it("default off, toggle works", () => {
     setRtkEnabled(false);
@@ -188,6 +226,52 @@ describe("RTK filters", () => {
     expect(out).toContain("repeated log line A");
     expect(out).toContain("duplicate lines");
     expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("dedupLog reduces repeated progress chatter while keeping the final error", () => {
+    const input = [
+      "progress: compiling",
+      "progress: compiling",
+      "progress: compiling",
+      "unique line",
+      "progress: compiling",
+      "progress: compiling",
+      "Error: failed to compile",
+    ].join("\n");
+    const out = dedupLog(input);
+    expect(out).toContain("Error: failed to compile");
+    expect(out.length).toBeLessThan(input.length);
+  });
+});
+
+describe("RTK metadata", () => {
+  it("returns structured savings and quality metadata", () => {
+    const body = {
+      messages: [
+        {
+          role: "tool",
+          content: makeLongDiff(),
+        },
+      ],
+    };
+
+    const stats = compressMessages(body, true);
+
+    expect(stats).toBeTruthy();
+    expect(stats.enabled).toBe(true);
+    expect(stats.bytesBefore).toBeGreaterThan(0);
+    expect(stats.bytesAfter).toBeLessThan(stats.bytesBefore);
+    expect(stats.savedBytes).toBe(stats.bytesBefore - stats.bytesAfter);
+    expect(stats.hitCount).toBeGreaterThan(0);
+    expect(Array.isArray(stats.filters)).toBe(true);
+    expect(stats.filters.length).toBeGreaterThan(0);
+    expect(stats.quality).toEqual(
+      expect.objectContaining({
+        unsafeFallbackCount: expect.any(Number),
+        unsafeFallbackTriggered: expect.any(Boolean),
+        rejectedCandidates: expect.any(Object),
+      }),
+    );
   });
 });
 
@@ -339,6 +423,28 @@ describe("RTK filters (extras)", () => {
     expect(out).not.toContain("extract: package-79");
     expect(out.length).toBeLessThan(input.length);
   });
+
+  it("stackTrace preserves error headline, file refs, and caused-by chain", () => {
+    const input = makeStackTraceOutput();
+    const out = stackTrace(input);
+    expect(out).toContain("TypeError: Cannot read properties of undefined");
+    expect(out).toContain("src/app/dashboard/page.js:42:12");
+    expect(out).toContain("Caused by: Error: Stats payload was empty");
+    expect(out).toContain("Build failed with 1 error.");
+    expect(out).not.toContain("processTicksAndRejections");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("shellTranscript preserves commands and final failure but removes repeated progress noise", () => {
+    const input = makeShellTranscriptOutput();
+    const out = shellTranscript(input);
+    expect(out).toContain("$ npm run build");
+    expect(out).toContain("$ netstat -ano | findstr :1508");
+    expect(out).toContain("EADDRINUSE");
+    expect(out).toContain("Build failed with exit code 1");
+    expect(out).not.toContain("Creating an optimized production build ...\nCreating an optimized production build ...\nCreating an optimized production build ...");
+    expect(out.length).toBeLessThan(input.length);
+  });
 });
 
 describe("autoDetectFilter (extras)", () => {
@@ -369,6 +475,12 @@ describe("autoDetectFilter (extras)", () => {
   });
   it("detects npm install output", () => {
     expect(autoDetectFilter(makeNpmInstallOutput()).filterName).toBe("npm-install");
+  });
+  it("detects stack traces", () => {
+    expect(autoDetectFilter(makeStackTraceOutput()).filterName).toBe("stack-trace");
+  });
+  it("detects shell transcripts", () => {
+    expect(autoDetectFilter(makeShellTranscriptOutput()).filterName).toBe("shell-transcript");
   });
 });
 
@@ -471,6 +583,17 @@ describe("compressMessages (enabled)", () => {
     expect(stats.hits[0].filter).toBe("smart-truncate");
     expect(body.messages[0].content).toContain("lines truncated");
     expect(body.messages[0].content.length).toBeLessThan(input.length);
+  });
+
+  it("keeps important anchors after multi-pass compression", () => {
+    const transcript = `${makeShellTranscriptOutput()}\n${Array.from({ length: 260 }, (_, i) => `noise line ${i}`).join("\n")}`;
+    const body = { messages: [{ role: "tool", tool_call_id: "x", content: transcript }] };
+    const stats = compressMessages(body);
+    expect(stats.hits.length).toBeGreaterThan(0);
+    expect(body.messages[0].content).toContain("$ npm run build");
+    expect(body.messages[0].content).toContain("EADDRINUSE");
+    expect(body.messages[0].content).toContain("Build failed with exit code 1");
+    expect(body.messages[0].content.length).toBeLessThan(transcript.length);
   });
 
   it("skips when body has no messages", () => {

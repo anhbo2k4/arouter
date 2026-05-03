@@ -16,6 +16,25 @@ const TUNNEL_BENEFITS = [
 
 const TUNNEL_PING_INTERVAL_MS = 2000;
 const TUNNEL_PING_MAX_MS = 300000;
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function formatPercent(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function getBarHeight(value, maxValue) {
+  const numeric = Number(value || 0);
+  const max = Math.max(1, Number(maxValue || 0));
+  const ratio = Math.max(0.12, numeric / max);
+  return `${Math.min(100, ratio * 100)}%`;
+}
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +50,10 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [rtkStats, setRtkStats] = useState(null);
+  const [rtkStatsLoading, setRtkStatsLoading] = useState(true);
+  const [rtkWindow, setRtkWindow] = useState("7d");
+  const [rtkKeyId, setRtkKeyId] = useState("all");
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -67,6 +90,10 @@ export default function APIPageClient({ machineId }) {
     const searched = filterApiKeysBySearch(keys, apiKeySearch);
     return filterApiKeysByStatus(searched, apiKeyStatusFilter);
   }, [keys, apiKeySearch, apiKeyStatusFilter]);
+  const rtkTimelineMax = useMemo(
+    () => Math.max(1, ...(rtkStats?.timeline || []).map((bucket) => Number(bucket.savedBytes || 0))),
+    [rtkStats],
+  );
 
   // Auto-scroll install log
   useEffect(() => {
@@ -77,6 +104,10 @@ export default function APIPageClient({ machineId }) {
     fetchData();
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    loadRtkStats(rtkWindow, rtkKeyId);
+  }, [rtkWindow, rtkKeyId]);
 
   const loadSettings = async () => {
     setTunnelChecking(true);
@@ -136,9 +167,31 @@ export default function APIPageClient({ machineId }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rtkEnabled: value }),
       });
-      if (res.ok) setRtkEnabledState(value);
+      if (res.ok) {
+        setRtkEnabledState(value);
+        await loadRtkStats(rtkWindow, rtkKeyId);
+      }
     } catch (error) {
       console.log("Error updating rtkEnabled:", error);
+    }
+  };
+
+  const loadRtkStats = async (windowValue = rtkWindow, keyIdValue = rtkKeyId) => {
+    setRtkStatsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        window: windowValue || "7d",
+        keyId: keyIdValue || "all",
+      });
+      const res = await fetch(`/api/dashboard/rtk/stats?${params.toString()}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setRtkStats(data);
+      }
+    } catch (error) {
+      console.log("Error loading RTK stats:", error);
+    } finally {
+      setRtkStatsLoading(false);
     }
   };
 
@@ -644,6 +697,155 @@ export default function APIPageClient({ machineId }) {
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
           />
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-[0.18em] text-text-muted">Window</span>
+              <select
+                value={rtkWindow}
+                onChange={(e) => setRtkWindow(e.target.value)}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+              >
+                <option value="24h">Last 24h</option>
+                <option value="7d">Last 7d</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-[0.18em] text-text-muted">API Key</span>
+              <select
+                value={rtkKeyId}
+                onChange={(e) => setRtkKeyId(e.target.value)}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary md:min-w-56"
+              >
+                {(rtkStats?.availableKeys || [{ id: "all", name: "All keys" }]).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="text-xs text-text-muted">
+            {rtkStatsLoading ? "Refreshing RTK telemetry..." : `Scope: ${rtkWindow === "24h" ? "hourly view" : "daily view"}${rtkKeyId !== "all" ? " · filtered by key" : ""}`}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-border bg-black/[0.02] p-4 dark:bg-white/[0.02]">
+            <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Saved</p>
+            <p className="mt-2 text-2xl font-semibold text-text-main">
+              {rtkStatsLoading ? "..." : formatBytes(rtkStats?.summary?.savedBytes)}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              {rtkStatsLoading ? "Loading telemetry..." : `${formatPercent(rtkStats?.summary?.savedPercent)} overall compression`}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border bg-black/[0.02] p-4 dark:bg-white/[0.02]">
+            <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Compressed</p>
+            <p className="mt-2 text-2xl font-semibold text-text-main">
+              {rtkStatsLoading ? "..." : `${Number(rtkStats?.summary?.compressedRequests || 0)}`}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              {rtkStatsLoading ? "Loading telemetry..." : `${Number(rtkStats?.summary?.rtkSeen || 0)} requests observed`}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border bg-black/[0.02] p-4 dark:bg-white/[0.02]">
+            <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Quality Guards</p>
+            <p className="mt-2 text-2xl font-semibold text-text-main">
+              {rtkStatsLoading ? "..." : `${Number(rtkStats?.summary?.unsafeFallbackCount || 0)}`}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Risky compressions blocked before they reached the model
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border bg-black/[0.02] p-4 dark:bg-white/[0.02]">
+            <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Filter Hits</p>
+            <p className="mt-2 text-2xl font-semibold text-text-main">
+              {rtkStatsLoading ? "..." : `${Number(rtkStats?.summary?.hitCount || 0)}`}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Multi-pass filter applications that produced smaller safe payloads
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-border bg-black/[0.02] p-4 dark:bg-white/[0.02]">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="font-medium text-text-main">Lossless-first quality guardrails</p>
+              <p className="mt-1 max-w-2xl text-sm text-text-muted">
+                RTK only removes repetition, boilerplate, and noisy machine output. Commands, stack frames, errors, file paths, and Expected/Received anchors stay intact. If a candidate compression looks unsafe, Arouter keeps the safer version.
+              </p>
+            </div>
+            <div className="text-xs text-text-muted">
+              {rtkStats?.summary?.lastSeenAt ? `Last seen ${new Date(rtkStats.summary.lastSeenAt).toLocaleString()}` : "No RTK request details yet"}
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-border bg-background/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-text-main">Savings timeline</p>
+                <p className="mt-1 text-sm text-text-muted">
+                  Bars show saved bytes per bucket. Footer labels show how many requests were actually compressed in that same bucket.
+                </p>
+              </div>
+              <div className="text-right text-xs text-text-muted">
+                <div>Peak bucket: {rtkStatsLoading ? "..." : formatBytes(rtkTimelineMax)}</div>
+                <div>{rtkWindow === "24h" ? "24 hourly buckets" : "7 daily buckets"}</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="flex h-44 items-end gap-2">
+                {(rtkStats?.timeline || []).map((bucket) => (
+                  <div key={bucket.key} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                    <div className="flex h-36 w-full items-end">
+                      <div
+                        className="w-full rounded-t-xl bg-gradient-to-t from-primary/85 via-primary/60 to-primary/25 transition-all"
+                        style={{ height: getBarHeight(bucket.savedBytes, rtkTimelineMax) }}
+                        title={`${bucket.label}: ${formatBytes(bucket.savedBytes)} saved · ${bucket.compressedRequests} compressed`}
+                      />
+                    </div>
+                    <div className="text-[10px] text-text-muted">{bucket.label}</div>
+                    <div className="text-[10px] text-text-muted">x{bucket.compressedRequests}</div>
+                  </div>
+                ))}
+              </div>
+              {!rtkStatsLoading && (!rtkStats?.timeline || rtkStats.timeline.length === 0) ? (
+                <div className="mt-4 rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-text-muted">
+                  No timeline data yet for this selection.
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(rtkStats?.topFilters || []).slice(0, 6).map((filter) => (
+              <span
+                key={filter.name}
+                className="rounded-full border border-border px-3 py-1 text-xs text-text-muted"
+              >
+                {filter.name} · {filter.count} · {formatBytes(filter.savedBytes)}
+              </span>
+            ))}
+            {!rtkStatsLoading && (!rtkStats?.topFilters || rtkStats.topFilters.length === 0) ? (
+              <span className="rounded-full border border-dashed border-border px-3 py-1 text-xs text-text-muted">
+                No filter activity yet
+              </span>
+            ) : null}
+          </div>
+          {!rtkStatsLoading && rtkStats?.rejectedReasons && Object.keys(rtkStats.rejectedReasons).length > 0 ? (
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Rejected candidates</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(rtkStats.rejectedReasons).map(([reason, count]) => (
+                  <span
+                    key={reason}
+                    className="rounded-full border border-border px-3 py-1 text-xs text-text-muted"
+                  >
+                    {reason} · {count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </Card>
 

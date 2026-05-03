@@ -106,6 +106,49 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
+export function buildPersistedRequestDetailRecord(item, config = {}) {
+  const maxJsonSize = Number(config.maxJsonSize || DEFAULT_MAX_JSON_SIZE);
+  const normalized = { ...item };
+
+  if (!normalized.id) normalized.id = generateDetailId(normalized.model);
+  if (!normalized.timestamp) normalized.timestamp = new Date().toISOString();
+  if (normalized.request?.headers) {
+    normalized.request = {
+      ...normalized.request,
+      headers: sanitizeHeaders(normalized.request.headers),
+    };
+  }
+
+  const record = {
+    id: normalized.id,
+    provider: normalized.provider || null,
+    model: normalized.model || null,
+    connectionId: normalized.connectionId || null,
+    apiKey: normalized.apiKey || null,
+    timestamp: normalized.timestamp,
+    status: normalized.status || null,
+    latency: normalized.latency || {},
+    tokens: normalized.tokens || {},
+    endpoint: normalized.endpoint || null,
+    skillOrchestration: normalized.skillOrchestration || null,
+    requestGovernor: normalized.requestGovernor || null,
+    rtk: normalized.rtk || null,
+    request: normalized.request || {},
+    providerRequest: normalized.providerRequest || {},
+    providerResponse: normalized.providerResponse || {},
+    response: normalized.response || {},
+  };
+
+  for (const field of ["request", "providerRequest", "providerResponse", "response"]) {
+    const str = JSON.stringify(record[field]);
+    if (str.length > maxJsonSize) {
+      record[field] = { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+    }
+  }
+
+  return record;
+}
+
 async function flushToDatabase() {
   if (isCloud || isFlushing || writeBuffer.length === 0) return;
 
@@ -118,35 +161,7 @@ async function flushToDatabase() {
     const config = await getObservabilityConfig();
 
     for (const item of itemsToSave) {
-      if (!item.id) item.id = generateDetailId(item.model);
-      if (!item.timestamp) item.timestamp = new Date().toISOString();
-      if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-      // Serialize large fields
-      const record = {
-        id: item.id,
-        provider: item.provider || null,
-        model: item.model || null,
-        connectionId: item.connectionId || null,
-        apiKey: item.apiKey || null,
-        timestamp: item.timestamp,
-        status: item.status || null,
-        latency: item.latency || {},
-        tokens: item.tokens || {},
-        request: item.request || {},
-        providerRequest: item.providerRequest || {},
-        providerResponse: item.providerResponse || {},
-        response: item.response || {},
-      };
-
-      // Truncate oversized JSON fields
-      const maxSize = config.maxJsonSize;
-      for (const field of ["request", "providerRequest", "providerResponse", "response"]) {
-        const str = JSON.stringify(record[field]);
-        if (str.length > maxSize) {
-          record[field] = { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
-        }
-      }
+      const record = buildPersistedRequestDetailRecord(item, { maxJsonSize: config.maxJsonSize });
 
       // Upsert: replace existing record with same id
       const idx = db.data.records.findIndex(r => r.id === record.id);

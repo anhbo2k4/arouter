@@ -112,6 +112,8 @@ export function buildRequestDetail(base, overrides = {}) {
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
     skillOrchestration: base.skillOrchestration || null,
+    requestGovernor: base.requestGovernor || null,
+    rtk: base.rtk || null,
     request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,

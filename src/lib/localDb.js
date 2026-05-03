@@ -37,6 +37,11 @@ const DEFAULT_SETTINGS = {
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   rtkEnabled: true,
+  softModelGovernorEnabled: true,
+  softModelGovernorMode: "safe",
+  softModelGovernorPremiumModels: ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex"],
+  softModelGovernorFallbackModel: "openai/gpt-4o-mini",
+  softModelGovernorMaxPromptCharsForTrivial: 180,
 };
 
 function cloneDefaultData() {

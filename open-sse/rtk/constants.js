@@ -54,5 +54,7 @@ export const FILTERS = {
   NEXT_BUILD: "next-build",
   NPM_INSTALL: "npm-install",
   TEST_RUNNER: "test-runner",
-  LINT_OUTPUT: "lint-output"
+  LINT_OUTPUT: "lint-output",
+  STACK_TRACE: "stack-trace",
+  SHELL_TRANSCRIPT: "shell-transcript"
 };

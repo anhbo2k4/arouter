@@ -16,6 +16,8 @@ import { nextBuild } from "./filters/nextBuild.js";
 import { npmInstall } from "./filters/npmInstall.js";
 import { testRunner } from "./filters/testRunner.js";
 import { lintOutput } from "./filters/lintOutput.js";
+import { stackTrace } from "./filters/stackTrace.js";
+import { shellTranscript } from "./filters/shellTranscript.js";
 
 const RE_GIT_DIFF = /^diff --git /m;
 const RE_GIT_DIFF_HUNK = /^@@ /m;
@@ -28,6 +30,9 @@ const RE_NEXT_BUILD = /Next\.js|Creating an optimized production build|Failed to
 const RE_TEST_RUNNER = /\b(RUN\s+v\d|Test Files\s+\d|Tests\s+\d|FAIL\s+.*\.test|AssertionError:)/i;
 const RE_LINT_OUTPUT = /[\\/][^:\n]+\.(?:js|jsx|ts|tsx|mjs|cjs)\n\s+\d+:\d+\s+(?:error|warning)\s+/i;
 const RE_NPM_INSTALL = /(?:added|removed|changed|audited)\s+\d+\s+packages?|npm WARN deprecated|npm ERR!/i;
+const RE_SHELL_PROMPT = /^\s*(?:\$|PS>|>\s*[A-Za-z@])/m;
+const RE_STACK_FRAME = /^\s*at\s+.+/m;
+const RE_STACK_HEADLINE = /^\s*(?:TypeError|ReferenceError|SyntaxError|RangeError|AssertionError|Error):/m;
 
 export function autoDetectFilter(text) {
   // Rust: floor_char_boundary to avoid UTF-8 split — JS .slice() by char is safe
@@ -35,10 +40,12 @@ export function autoDetectFilter(text) {
 
   if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head)) return gitDiff;
   if (RE_GIT_STATUS.test(head) || isMostlyPorcelain(head)) return gitStatus;
+  if (RE_SHELL_PROMPT.test(head) && /(error|warning|failed|eaddrinuse|build)/i.test(head)) return shellTranscript;
   if (RE_NEXT_BUILD.test(head)) return nextBuild;
   if (RE_TEST_RUNNER.test(head)) return testRunner;
   if (RE_LINT_OUTPUT.test(head)) return lintOutput;
   if (RE_NPM_INSTALL.test(head)) return npmInstall;
+  if (RE_STACK_FRAME.test(head) && RE_STACK_HEADLINE.test(head)) return stackTrace;
 
   const lines = head.split("\n");
   const nonEmpty = lines.filter(l => l.trim().length > 0);

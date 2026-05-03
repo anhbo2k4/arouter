@@ -163,6 +163,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   //   }
   // }
 
+  if (rtkStats) {
+    result._rtkStats = rtkStats;
+  }
+
   return result;
 }
 

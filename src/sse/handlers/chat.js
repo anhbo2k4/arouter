@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { applyRequestGovernor } from "../services/requestGovernor.js";
 
 /**
  * Handle chat completion request
@@ -89,33 +90,47 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  const requestGovernor = applyRequestGovernor({
+    requestedModel: modelStr,
+    body,
+    settings,
+  });
+  const effectiveBody = requestGovernor.body || body;
+  const effectiveModelStr = requestGovernor.routedModel || modelStr;
+
+  if (requestGovernor.decision === "downgraded") {
+    log.info("GOVERNOR", `${requestGovernor.requestedModel} -> ${requestGovernor.routedModel} | ${requestGovernor.reason}`);
+  } else if (requestGovernor.decision === "preserved" && requestGovernor.reason !== "uncertain-keep-premium") {
+    log.debug("GOVERNOR", `${requestGovernor.requestedModel} preserved | ${requestGovernor.reason}`);
+  }
+
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const comboModels = await getComboModels(effectiveModelStr);
   if (comboModels) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
+    const comboSpecificStrategy = comboStrategies[effectiveModelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
+    log.info("CHAT", `Combo "${effectiveModelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
     return handleComboChat({
-      body,
+      body: effectiveBody,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, requestGovernor),
       log,
-      comboName: modelStr,
+      comboName: effectiveModelStr,
       comboStrategy
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(effectiveBody, effectiveModelStr, clientRawRequest, request, apiKey, requestGovernor);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestGovernor = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -132,7 +147,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, requestGovernor),
         log,
         comboName: modelStr,
         comboStrategy
@@ -205,6 +220,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      requestGovernor,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       providerThinking,

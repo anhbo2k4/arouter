@@ -98,7 +98,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, skillOrchestration }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, skillOrchestration, requestGovernor, rtk }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
   if (!isSSE) return null; // not handled here
@@ -129,6 +129,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         ...ctx,
         apiKey,
         skillOrchestration,
+        requestGovernor,
+        rtk,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
@@ -211,6 +213,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       ...ctx,
       apiKey,
       skillOrchestration,
+      requestGovernor,
+      rtk,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage,
       response: {

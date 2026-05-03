@@ -4,6 +4,7 @@ import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 import { smartTruncate } from "./filters/smartTruncate.js";
+import { dedupLog } from "./filters/dedupLog.js";
 
 let rtkEnabled = false;
 
@@ -13,6 +14,55 @@ export function setRtkEnabled(enabled) {
 
 export function isRtkEnabled() {
   return rtkEnabled;
+}
+
+function createRtkStats() {
+  return {
+    enabled: true,
+    applied: false,
+    bytesBefore: 0,
+    bytesAfter: 0,
+    savedBytes: 0,
+    savedPercent: 0,
+    hitCount: 0,
+    filters: [],
+    hits: [],
+    quality: {
+      unsafeFallbackCount: 0,
+      unsafeFallbackTriggered: false,
+      rejectedCandidates: {},
+    },
+  };
+}
+
+function addRejectedCandidate(stats, reason) {
+  if (!stats?.quality || !reason) return;
+  stats.quality.rejectedCandidates[reason] = (stats.quality.rejectedCandidates[reason] || 0) + 1;
+  if (reason === "anchor-loss") {
+    stats.quality.unsafeFallbackCount += 1;
+    stats.quality.unsafeFallbackTriggered = true;
+  }
+}
+
+function finalizeRtkStats(stats) {
+  if (!stats) return null;
+  stats.savedBytes = Math.max(0, stats.bytesBefore - stats.bytesAfter);
+  stats.savedPercent = stats.bytesBefore > 0
+    ? Math.round((stats.savedBytes / stats.bytesBefore) * 1000) / 10
+    : 0;
+  stats.hitCount = Array.isArray(stats.hits) ? stats.hits.length : 0;
+  stats.filters = Array.from(
+    new Set(
+      (stats.hits || []).flatMap((hit) => (
+        Array.isArray(hit?.filters) && hit.filters.length > 0
+          ? hit.filters
+          : (hit?.filter ? [hit.filter] : [])
+      )),
+    ),
+  );
+  stats.applied = stats.savedBytes > 0 && stats.hitCount > 0;
+  stats.quality.unsafeFallbackTriggered = stats.quality.unsafeFallbackCount > 0;
+  return stats;
 }
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
@@ -25,7 +75,7 @@ export function compressMessages(body, enabled = rtkEnabled) {
     : null;
   if (!items) return null;
 
-  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  const stats = createRtkStats();
   try {
     for (let i = 0; i < items.length; i++) {
       const msg = items[i];
@@ -89,7 +139,7 @@ export function compressMessages(body, enabled = rtkEnabled) {
     console.warn("[RTK] compressMessages error:", e.message);
     return null;
   }
-  return stats;
+  return finalizeRtkStats(stats);
 }
 
 function compressText(text, stats, shape) {
@@ -107,33 +157,89 @@ function compressText(text, stats, shape) {
     return text;
   }
 
-  let out = safeApply(fn, text);
-  let filterName = fn.filterName || fn.name;
+  let current = text;
+  const filtersUsed = [];
+  current = tryCandidate(fn, text, current, filtersUsed, { stats });
+  current = tryCandidate(dedupLog, current, current, filtersUsed, { skipIfSameFilter: fn === dedupLog, stats });
+  current = tryCandidate(smartTruncate, current, current, filtersUsed, { skipIfSameFilter: fn === smartTruncate, stats });
 
-  if ((!out || out.length === 0 || out.length >= bytesIn) && fn !== smartTruncate) {
-    const truncated = safeApply(smartTruncate, text);
-    if (truncated && truncated.length > 0 && truncated.length < bytesIn) {
-      out = truncated;
-      filterName = smartTruncate.filterName || smartTruncate.name;
-    }
-  }
-
-  // Safety: never return empty, never grow the input
-  if (!out || out.length === 0 || out.length >= bytesIn) {
+  if (!current || current.length === 0 || current.length >= bytesIn) {
     stats.bytesAfter += bytesIn;
     return text;
   }
 
-  stats.bytesAfter += out.length;
-  stats.hits.push({ shape, filter: filterName, saved: bytesIn - out.length });
+  stats.bytesAfter += current.length;
+  const resolvedFilters = filtersUsed.length > 0 ? [...filtersUsed] : [fn.filterName || fn.name];
+  stats.hits.push({
+    shape,
+    filter: resolvedFilters.join(","),
+    filters: resolvedFilters,
+    saved: bytesIn - current.length,
+  });
+  return current;
+}
+
+function tryCandidate(fn, anchorSource, current, filtersUsed, options = {}) {
+  if (options.skipIfSameFilter) return current;
+  const out = safeApply(fn, current);
+  if (!out || out.length === 0) {
+    addRejectedCandidate(options.stats, "empty-output");
+    return current;
+  }
+  if (out.length >= current.length) {
+    addRejectedCandidate(options.stats, "not-smaller");
+    return current;
+  }
+  if (!preservesImportantAnchors(anchorSource, out)) {
+    addRejectedCandidate(options.stats, "anchor-loss");
+    return current;
+  }
+  filtersUsed.push(fn.filterName || fn.name);
   return out;
+}
+
+function preservesImportantAnchors(source, candidate) {
+  const anchors = extractImportantAnchors(source);
+  if (anchors.length === 0) return true;
+  return anchors.every((anchor) => candidate.includes(anchor));
+}
+
+function extractImportantAnchors(text) {
+  const lines = String(text || "").split("\n");
+  const anchors = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/(error|warning|assert|failed|exception|EADDRINUSE|Caused by:|Expected:|Received:)/i.test(trimmed)) {
+      anchors.push(trimmed);
+    } else if (/^\s*at\s+/.test(trimmed)) {
+      anchors.push(trimmed);
+    } else if (/^\s*(?:\$|PS>|>\s*[A-Za-z@])/.test(trimmed)) {
+      anchors.push(trimmed);
+    }
+    if (anchors.length >= 12) break;
+  }
+  return [...new Set(anchors)];
 }
 
 // Convenience: format a log line from stats
 export function formatRtkLog(stats) {
-  if (!stats || !stats.hits || stats.hits.length === 0) return null;
-  const saved = stats.bytesBefore - stats.bytesAfter;
-  const pct = stats.bytesBefore > 0 ? ((saved / stats.bytesBefore) * 100).toFixed(1) : "0";
-  const filters = Array.from(new Set(stats.hits.map(h => h.filter))).join(",");
-  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${stats.hits.length}`;
+  if (!stats || (!stats.hits?.length && !stats.quality?.unsafeFallbackCount)) return null;
+  const saved = Number(
+    stats.savedBytes !== undefined
+      ? stats.savedBytes
+      : Math.max(0, Number(stats.bytesBefore || 0) - Number(stats.bytesAfter || 0)),
+  );
+  const pctValue = stats.savedPercent !== undefined
+    ? Number(stats.savedPercent || 0)
+    : (Number(stats.bytesBefore || 0) > 0 ? (saved / Number(stats.bytesBefore || 0)) * 100 : 0);
+  const pct = pctValue.toFixed(1);
+  const filters = Array.isArray(stats.filters) && stats.filters.length > 0
+    ? stats.filters.join(",")
+    : Array.from(new Set((stats.hits || []).map((hit) => hit.filter).filter(Boolean))).join(",");
+  const fallbackSuffix = stats.quality?.unsafeFallbackCount
+    ? ` unsafeFallbacks=${stats.quality.unsafeFallbackCount}`
+    : "";
+  const hitCount = stats.hitCount !== undefined ? stats.hitCount : (stats.hits || []).length;
+  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${hitCount}${fallbackSuffix}`;
 }

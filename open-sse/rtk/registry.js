@@ -13,6 +13,8 @@ import { nextBuild } from "./filters/nextBuild.js";
 import { npmInstall } from "./filters/npmInstall.js";
 import { testRunner } from "./filters/testRunner.js";
 import { lintOutput } from "./filters/lintOutput.js";
+import { stackTrace } from "./filters/stackTrace.js";
+import { shellTranscript } from "./filters/shellTranscript.js";
 
 const REGISTRY = {
   [FILTERS.GIT_DIFF]: gitDiff,
@@ -28,7 +30,9 @@ const REGISTRY = {
   [FILTERS.NEXT_BUILD]: nextBuild,
   [FILTERS.NPM_INSTALL]: npmInstall,
   [FILTERS.TEST_RUNNER]: testRunner,
-  [FILTERS.LINT_OUTPUT]: lintOutput
+  [FILTERS.LINT_OUTPUT]: lintOutput,
+  [FILTERS.STACK_TRACE]: stackTrace,
+  [FILTERS.SHELL_TRANSCRIPT]: shellTranscript
 };
 
 // Rust resolve_filter aliases (pipe_cmd.rs): grep|rg, find|fd
