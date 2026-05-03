@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import ApiKeyTokenLimits from "./components/ApiKeyTokenLimits";
+import { deriveApiKeyStatus, filterApiKeysBySearch, filterApiKeysByStatus } from "./components/apiKeyAdminState";
 
 const TUNNEL_BENEFITS = [
   { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
@@ -21,6 +22,9 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [apiKeySearch, setApiKeySearch] = useState("");
+  const [apiKeyStatusFilter, setApiKeyStatusFilter] = useState("all");
+  const [showApiKeyList, setShowApiKeyList] = useState(true);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -59,6 +63,10 @@ export default function APIPageClient({ machineId }) {
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
   const { copied, copy } = useCopyToClipboard();
+  const filteredKeys = useMemo(() => {
+    const searched = filterApiKeysBySearch(keys, apiKeySearch);
+    return filterApiKeysByStatus(searched, apiKeyStatusFilter);
+  }, [keys, apiKeySearch, apiKeyStatusFilter]);
 
   // Auto-scroll install log
   useEffect(() => {
@@ -642,10 +650,24 @@ export default function APIPageClient({ machineId }) {
       {/* API Keys */}
       <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">API Keys</h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
-            Create Key
-          </Button>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">API Keys</h2>
+            <span className="rounded-full border border-border px-2 py-0.5 text-xs text-text-muted">
+              {filteredKeys.length}/{keys.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              icon={showApiKeyList ? "expand_less" : "expand_more"}
+              onClick={() => setShowApiKeyList((prev) => !prev)}
+            >
+              {showApiKeyList ? "Hide List" : "Show List"}
+            </Button>
+            <Button icon="add" onClick={() => setShowAddModal(true)}>
+              Create Key
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
@@ -672,15 +694,53 @@ export default function APIPageClient({ machineId }) {
               Create Key
             </Button>
           </div>
+        ) : !showApiKeyList ? (
+          <div className="rounded-xl border border-border bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3 text-sm text-text-muted">
+            API key list is collapsed. Use <span className="font-medium text-text-main">Show List</span> when you need to inspect keys.
+          </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
+            <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex w-full flex-col gap-3 md:max-w-2xl md:flex-row">
+                <input
+                  value={apiKeySearch}
+                  onChange={(e) => setApiKeySearch(e.target.value)}
+                  placeholder="Search by key name, key value, model, or status..."
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+                />
+                <select
+                  value={apiKeyStatusFilter}
+                  onChange={(e) => setApiKeyStatusFilter(e.target.value)}
+                  className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary md:w-44"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="locked">Locked</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </div>
+              <div className="text-xs text-text-muted">
+                Filter matches name, secret, model access, and status. Locked keys are quota-disabled keys.
+              </div>
+            </div>
+
+            {filteredKeys.map((key) => (
               <div
                 key={key.id}
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{key.name}</p>
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-muted">
+                      {deriveApiKeyStatus({
+                        isActive: key.isActive,
+                        enabled: key.enabled,
+                        expired: key.expired,
+                        disabledReason: key.disabledReason,
+                      })}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -734,6 +794,11 @@ export default function APIPageClient({ machineId }) {
                 </div>
               </div>
             ))}
+            {!filteredKeys.length ? (
+              <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-text-muted">
+                No API keys matched <span className="font-medium text-text-main">{apiKeySearch || "this filter"}</span>.
+              </div>
+            ) : null}
           </div>
         )}
       </Card>

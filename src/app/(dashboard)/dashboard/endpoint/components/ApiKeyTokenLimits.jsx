@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDateTimeLocal, mergeRowEditsWithDirtyRows } from "./apiKeyTokenLimitState";
+import {
+  filterApiKeysBySearch,
+  filterApiKeysByStatus,
+  QUOTA_MULTIPLIER_PRESETS,
+  sortApiKeys,
+} from "./apiKeyAdminState";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString();
@@ -67,6 +73,10 @@ export default function ApiKeyTokenLimits() {
   const [savingId, setSavingId] = useState("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
+  const [keySearch, setKeySearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [expandedRows, setExpandedRows] = useState(() => new Set());
   const refreshTimerRef = useRef(null);
   const loadingRef = useRef(false);
   const dirtyRowsRef = useRef(dirtyRows);
@@ -271,6 +281,11 @@ export default function ApiKeyTokenLimits() {
     () => keys.filter((key) => key.disabledReason === "token_quota_exceeded" || key.disabledReason === "api_key_expired").length,
     [keys]
   );
+  const filteredKeys = useMemo(() => {
+    const searched = filterApiKeysBySearch(keys, keySearch);
+    const filtered = filterApiKeysByStatus(searched, statusFilter);
+    return sortApiKeys(filtered, sortBy);
+  }, [keys, keySearch, statusFilter, sortBy]);
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : "";
   const liveKeyCount = insights.activeKeys?.length || 0;
   const inputClass =
@@ -279,6 +294,29 @@ export default function ApiKeyTokenLimits() {
     "h-8 rounded-lg border border-neutral-800 bg-black/35 px-2 text-xs text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/15";
   const actionButtonClass =
     "rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-semibold text-neutral-200 transition hover:border-orange-500/60 hover:bg-orange-500/10 disabled:opacity-60";
+  const quotaPresetButtonClass =
+    "rounded-md border border-neutral-700 bg-black/30 px-2 py-1 text-[10px] font-semibold text-neutral-300 transition hover:border-cyan-500/50 hover:bg-cyan-500/10 hover:text-white";
+
+  function toggleRowExpanded(id) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function expandAllFilteredRows() {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      filteredKeys.forEach((key) => next.add(key.id));
+      return next;
+    });
+  }
+
+  function collapseAllRows() {
+    setExpandedRows(new Set());
+  }
 
   return (
     <section className="relative mt-6 overflow-hidden rounded-2xl border border-orange-500/20 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.14),transparent_34%),linear-gradient(180deg,rgba(23,23,23,0.96),rgba(10,10,10,0.98))] p-5 text-neutral-100 shadow-[0_24px_80px_rgba(0,0,0,0.36)]">
@@ -337,7 +375,7 @@ export default function ApiKeyTokenLimits() {
           <input className={inputClass} type="number" min="0" placeholder="Total tokens" value={form.maxTotalTokens} onChange={(e) => setForm({ ...form, maxTotalTokens: e.target.value })} />
           <input className={inputClass} type="number" min="0" placeholder="Input limit" value={form.maxInputTokens} onChange={(e) => setForm({ ...form, maxInputTokens: e.target.value })} />
           <input className={inputClass} type="number" min="0" placeholder="Output limit" value={form.maxOutputTokens} onChange={(e) => setForm({ ...form, maxOutputTokens: e.target.value })} />
-          <input className={inputClass} type="number" min="1" step="0.1" placeholder="Total x1.0" value={form.quotaMultiplierTotal} onChange={(e) => setForm({ ...form, quotaMultiplierTotal: e.target.value })} />
+          <input className={inputClass} type="number" min="1" step="0.05" placeholder="Virtual total x1.0" value={form.quotaMultiplierTotal} onChange={(e) => setForm({ ...form, quotaMultiplierTotal: e.target.value })} />
           <select className={inputClass} value={form.window} onChange={(e) => setForm({ ...form, window: e.target.value })}>
             <option value="daily">Daily reset at 00:00 VN</option>
           </select>
@@ -352,6 +390,19 @@ export default function ApiKeyTokenLimits() {
           <button disabled={loading} onClick={createKey} className="rounded-xl border border-orange-400/40 bg-orange-600 px-4 py-2.5 text-sm font-bold text-white shadow-[0_14px_36px_rgba(249,115,22,0.24)] transition hover:bg-orange-500 disabled:opacity-60 md:col-span-2">
             {loading ? "Creating..." : "Create key"}
           </button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="text-xs text-neutral-500">Quick virtual quota presets:</div>
+          {QUOTA_MULTIPLIER_PRESETS.map((preset) => (
+            <button
+              key={`create-preset-${preset}`}
+              type="button"
+              className={quotaPresetButtonClass}
+              onClick={() => setForm((prev) => ({ ...prev, quotaMultiplierTotal: String(preset) }))}
+            >
+              x{fmtMultiplier(preset)}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -416,9 +467,49 @@ export default function ApiKeyTokenLimits() {
       </div>
 
       <div className="space-y-3">
-        {keys.map((key) => {
+        <div className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-950/55 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-neutral-200">Search token-limit keys</div>
+              <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400">
+                {filteredKeys.length}/{keys.length}
+              </span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+              <input
+                className={inputClass}
+                value={keySearch}
+                onChange={(e) => setKeySearch(e.target.value)}
+                placeholder="Search by key name, key value, model, disabled reason, or window..."
+              />
+              <select className={inputClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="locked">Locked</option>
+                <option value="expired">Expired</option>
+              </select>
+              <select className={inputClass} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="createdAt">Sort: createdAt</option>
+                <option value="used">Sort: used</option>
+                <option value="raw">Sort: raw</option>
+                <option value="virtual">Sort: virtual</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={actionButtonClass} onClick={expandAllFilteredRows}>
+              Expand all
+            </button>
+            <button type="button" className={actionButtonClass} onClick={collapseAllRows}>
+              Collapse all
+            </button>
+          </div>
+        </div>
+
+        {filteredKeys.map((key) => {
           const used = Number(key.usage?.totalTokens || 0);
           const rawUsed = Number((key.usage?.rawTotalTokens ?? key.usage?.totalTokens) || 0);
+          const virtualUsed = Math.max(0, used - rawUsed);
           const requests = Number(key.usage?.requests || 0);
           const limit = Number(key.quota?.maxTotalTokens || 0);
           const remainingTotal = remaining(used, limit);
@@ -432,6 +523,7 @@ export default function ApiKeyTokenLimits() {
           const expired = key.expired || key.disabledReason === "api_key_expired";
           const progressColor = expired || over ? "from-red-500 to-red-300" : pct >= 80 ? "from-amber-500 to-orange-300" : "from-cyan-400 to-emerald-300";
           const statusLabel = expired ? "Expired" : key.enabled ? "Enabled" : quotaLocked ? "Limit locked" : "Disabled";
+          const expanded = expandedRows.has(key.id);
 
           return (
             <article
@@ -439,6 +531,26 @@ export default function ApiKeyTokenLimits() {
               className={`group relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/78 p-3 shadow-[0_18px_55px_rgba(0,0,0,0.26)] transition ${rowTone({ expired, quotaLocked, over })}`}
             >
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent opacity-0 transition group-hover:opacity-100" />
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-800/80 bg-black/24 px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${statusTone({ key, expired, quotaLocked })}`}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {statusLabel}
+                  </span>
+                  <span className="truncate text-sm font-semibold text-white">{key.name}</span>
+                  <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+                    {(key.quota?.window || "daily").toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-400">
+                  <span>Adjusted {fmt(used)}</span>
+                  <span>Raw {fmt(rawUsed)}</span>
+                  <span>x{fmtMultiplier(multiplier)}</span>
+                  <button type="button" className={actionButtonClass} onClick={() => toggleRowExpanded(key.id)}>
+                    {expanded ? "Hide details" : "Show details"}
+                  </button>
+                </div>
+              </div>
               <div className="grid gap-3 xl:grid-cols-[minmax(230px,0.95fr)_minmax(260px,1.2fr)_minmax(300px,1.25fr)_minmax(260px,1fr)]">
                 <div className="min-w-0 rounded-xl border border-neutral-800/80 bg-black/24 p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -487,8 +599,19 @@ export default function ApiKeyTokenLimits() {
                       <div className="mt-1 font-semibold text-neutral-200">{fmt(key.usage?.inputTokens || 0)} / {fmt(key.usage?.outputTokens || 0)}</div>
                     </div>
                   </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-2">
+                      <div className="text-cyan-100">Virtual quota usage</div>
+                      <div className="mt-1 font-semibold text-white">{fmt(virtualUsed)}</div>
+                    </div>
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-2">
+                      <div className="text-neutral-500">Public checker sees</div>
+                      <div className="mt-1 font-semibold text-neutral-200">Adjusted total only</div>
+                    </div>
+                  </div>
                 </div>
 
+                {expanded ? (
                 <div className="rounded-xl border border-neutral-800/80 bg-black/24 p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">Limits editor</p>
@@ -517,9 +640,24 @@ export default function ApiKeyTokenLimits() {
                       <input className={compactInputClass} type="number" min="0" value={edit.maxOutputTokens} onChange={(e) => onChangeRow(key.id, "maxOutputTokens", e.target.value)} />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[10px] text-neutral-500">Total x</span>
-                      <input className={compactInputClass} type="number" min="1" step="0.1" value={edit.quotaMultiplierTotal} onChange={(e) => onChangeRow(key.id, "quotaMultiplierTotal", e.target.value)} />
+                      <span className="text-[10px] text-neutral-500">Virtual total x</span>
+                      <input className={compactInputClass} type="number" min="1" step="0.05" value={edit.quotaMultiplierTotal} onChange={(e) => onChangeRow(key.id, "quotaMultiplierTotal", e.target.value)} />
                     </label>
+                  </div>
+                  <div className="mt-2 rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 text-[11px] text-cyan-100">
+                    Raw upstream tokens stay real. This multiplier only increases the quota-accounted total for this key.
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {QUOTA_MULTIPLIER_PRESETS.map((preset) => (
+                      <button
+                        key={`${key.id}-preset-${preset}`}
+                        type="button"
+                        className={quotaPresetButtonClass}
+                        onClick={() => onChangeRow(key.id, "quotaMultiplierTotal", String(preset))}
+                      >
+                        x{fmtMultiplier(preset)}
+                      </button>
+                    ))}
                   </div>
                   <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.7fr)]">
                     <label className="grid gap-1">
@@ -538,7 +676,9 @@ export default function ApiKeyTokenLimits() {
                     <button type="button" className={actionButtonClass} onClick={() => onChangeRow(key.id, "expiresAt", "")}>No expiry</button>
                   </div>
                 </div>
+                ) : null}
 
+                {expanded ? (
                 <div className="flex flex-col justify-between gap-3 rounded-xl border border-neutral-800/80 bg-black/24 p-3">
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded-lg bg-neutral-900/70 p-2">
@@ -591,13 +731,14 @@ export default function ApiKeyTokenLimits() {
                     <button className="rounded-lg border border-red-500/30 bg-red-600/90 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-red-500" onClick={() => deleteKey(key.id)}>Delete</button>
                   </div>
                 </div>
+                ) : null}
               </div>
             </article>
           );
         })}
-        {!keys.length ? (
+        {!filteredKeys.length ? (
           <div className="rounded-2xl border border-dashed border-neutral-700 bg-neutral-950/70 p-8 text-center text-neutral-400">
-            No API key token limits yet.
+            {keys.length ? `No token-limit keys matched the current search/filter.` : "No API key token limits yet."}
           </div>
         ) : null}
       </div>
