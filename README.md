@@ -117,6 +117,11 @@ Default URLs:
 - Dashboard: `http://localhost:1508/dashboard`
 - OpenAI-compatible API: `http://localhost:1508/v1`
 
+Public deployment:
+- Nginx reverse proxy guide: [docs/nginx-reverse-proxy.md](./docs/nginx-reverse-proxy.md)
+- Recommended public API URL: `https://your-domain.example/v1`
+- Cloudflare tunnel is no longer required for the public deployment path
+
 ### Project Usage Guide (Added Features)
 
 #### 1. API Key Token Limits (Dashboard)

@@ -107,9 +107,11 @@ export function buildRequestDetail(base, overrides = {}) {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
+    apiKey: base.apiKey || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
+    skillOrchestration: base.skillOrchestration || null,
     request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,
@@ -119,7 +121,7 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
-export async function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE" }) {
+export async function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", skillOrchestration = null }) {
   if (!tokens || typeof tokens !== "object") return null;
 
   const promptDetails = tokens.prompt_tokens_details || tokens.input_tokens_details || {};
@@ -169,7 +171,8 @@ export async function saveUsageStats({ provider, model, tokens, connectionId, ap
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    estimatedCharsSaved: Math.max(0, Number(skillOrchestration?.estimatedCharsSaved || 0)),
   }).catch(() => null);
 
   return saved?.quotaStatus || null;

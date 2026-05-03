@@ -43,6 +43,25 @@ function toFiniteNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+export function normalizeQuotaMultiplierTotal(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 1;
+  return Math.round(numeric * 100) / 100;
+}
+
+export function applyQuotaMultiplierToUsage(usage = {}, multiplier = 1) {
+  const normalizedMultiplier = normalizeQuotaMultiplierTotal(multiplier);
+  const rawTotalTokens = toFiniteNumber(usage.rawTotalTokens ?? usage.totalTokens);
+  return {
+    ...usage,
+    inputTokens: toFiniteNumber(usage.inputTokens),
+    outputTokens: toFiniteNumber(usage.outputTokens),
+    totalTokens: Math.round(rawTotalTokens * normalizedMultiplier),
+    rawTotalTokens,
+    quotaMultiplierTotal: normalizedMultiplier,
+  };
+}
+
 function normalizeTokenRow(row = {}) {
   const promptDetails = row.prompt_tokens_details || row.input_tokens_details || {};
   const completionDetails = row.completion_tokens_details || row.output_tokens_details || {};
@@ -172,6 +191,7 @@ function shapeTokenApiKey(key) {
     ...key,
     enabled: key.isActive !== false,
     expired: isApiKeyExpired(key),
+    quotaMultiplierTotal: normalizeQuotaMultiplierTotal(key.quotaMultiplierTotal),
     quota: ensureQuotaShape(key),
     allowedModels: Array.isArray(key.allowedModels) ? key.allowedModels : [],
   };
@@ -415,6 +435,7 @@ export async function createTokenApiKey(input = {}) {
 
   const patch = {
     allowedModels: Array.isArray(input.allowedModels) ? input.allowedModels : [],
+    quotaMultiplierTotal: normalizeQuotaMultiplierTotal(input.quotaMultiplierTotal),
     quota: ensureQuotaShape({ quota: input.quota || {} }),
   };
   if (typeof input.expiresAt === "string" && input.expiresAt.trim()) {
@@ -449,6 +470,9 @@ export async function updateTokenApiKey(id, patch = {}) {
     updateData.expiredAt = null;
   }
   if (Array.isArray(patch.allowedModels)) updateData.allowedModels = patch.allowedModels;
+  if (Object.prototype.hasOwnProperty.call(patch, "quotaMultiplierTotal")) {
+    updateData.quotaMultiplierTotal = normalizeQuotaMultiplierTotal(patch.quotaMultiplierTotal);
+  }
   if (patch.quota) updateData.quota = { ...ensureQuotaShape({}), ...patch.quota };
 
   const keys = await getApiKeys();
@@ -500,6 +524,10 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
   const db = await readQuotaDb();
   const since = quotaWindowStart(window);
   const sinceDate = new Date(since);
+  const keys = await getApiKeys();
+  const keyObj = keys.find((k) => k.id === apiKeyId);
+  const apiKeyValue = keyObj?.key;
+  const quotaMultiplierTotal = normalizeQuotaMultiplierTotal(keyObj?.quotaMultiplierTotal);
 
   // Internal token-quota usage DB:
   // keep quick-test/manual entries; legacy chat-completions estimates are ignored
@@ -517,9 +545,6 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
   // Exact usage from open-sse usage history (saved with apiKey + real/normalized tokens)
   let exactUsage = aggregateUsageRows();
   try {
-    const keys = await getApiKeys();
-    const keyObj = keys.find((k) => k.id === apiKeyId);
-    const apiKeyValue = keyObj?.key;
     if (apiKeyValue) {
       const { getUsageHistory } = await import("@/lib/usageDb");
       const history = await getUsageHistory({ startDate: since });
@@ -535,7 +560,7 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
     // Fallback to internalUsage when usageDb is unavailable
   }
 
-  const usage = {
+  const rawUsage = {
     requests: exactUsage.requests + internalUsage.requests,
     inputTokens: exactUsage.inputTokens + internalUsage.inputTokens,
     outputTokens: exactUsage.outputTokens + internalUsage.outputTokens,
@@ -546,6 +571,7 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
     exactRequests: exactUsage.requests,
     internalRequests: internalUsage.requests,
   };
+  const usage = applyQuotaMultiplierToUsage(rawUsage, quotaMultiplierTotal);
 
   const override = db.usageOverrides
     .filter((row) => row.apiKeyId === apiKeyId && row.window === window)
@@ -621,10 +647,11 @@ export async function getTokenApiKeyDailyTrend(apiKeyId, days = 7) {
     bucket.totalTokens += tokens.totalTokens;
   }
 
+  const keys = await getApiKeys();
+  const keyObj = keys.find((k) => k.id === apiKeyId);
+  const apiKeyValue = keyObj?.key;
+  const quotaMultiplierTotal = normalizeQuotaMultiplierTotal(keyObj?.quotaMultiplierTotal);
   try {
-    const keys = await getApiKeys();
-    const keyObj = keys.find((k) => k.id === apiKeyId);
-    const apiKeyValue = keyObj?.key;
     if (apiKeyValue) {
       const { getUsageHistory } = await import("@/lib/usageDb");
       const history = await getUsageHistory({ startDate: startDate.toISOString() });
@@ -645,7 +672,7 @@ export async function getTokenApiKeyDailyTrend(apiKeyId, days = 7) {
     // Trend falls back to internal token-quota rows only.
   }
 
-  return buckets;
+  return buckets.map((bucket) => applyQuotaMultiplierToUsage(bucket, quotaMultiplierTotal));
 }
 
 export async function setTokenApiKeyUsage({ apiKeyId, window = "monthly", totalTokens, inputTokens, outputTokens }) {
@@ -706,6 +733,7 @@ export async function checkTokenQuota({ apiKey, body }) {
   const estimatedInputTokens = estimateTokens(body?.messages || body?.input || body);
   const estimatedOutputTokens = estimateOutputTokens(body);
   const usage = await getTokenApiKeyUsage(apiKey.id, apiKey.quota.window);
+  const quotaMultiplierTotal = normalizeQuotaMultiplierTotal(apiKey.quotaMultiplierTotal);
 
   const currentBreach = getQuotaBreach(usage, apiKey.quota, { inclusive: true });
   if (currentBreach) {
@@ -723,7 +751,7 @@ export async function checkTokenQuota({ apiKey, body }) {
 
   const projectedInput = usage.inputTokens + estimatedInputTokens;
   const projectedOutput = usage.outputTokens + estimatedOutputTokens;
-  const projectedTotal = usage.totalTokens + estimatedInputTokens + estimatedOutputTokens;
+  const projectedTotal = usage.totalTokens + Math.round((estimatedInputTokens + estimatedOutputTokens) * quotaMultiplierTotal);
 
   const projectedUsage = {
     inputTokens: projectedInput,
@@ -750,7 +778,7 @@ export async function checkTokenQuota({ apiKey, body }) {
     };
   }
 
-  return { allowed: true, usage, estimatedInputTokens, estimatedOutputTokens };
+  return { allowed: true, usage, estimatedInputTokens, estimatedOutputTokens, quotaMultiplierTotal };
 }
 
 export async function enforceTokenQuotaAfterUsage({ apiKeyValue, apiKeyId, usageEntry = {}, provider, model, endpoint } = {}) {
@@ -864,8 +892,8 @@ export async function getTokenApiKeyStatusBySecret(secret) {
       disabledReason: apiKey.disabledReason || null,
       disabledAt: apiKey.disabledAt || null,
     },
-    usage,
-    dailyTrend,
+    usage: sanitizePublicTokenUsage(usage),
+    dailyTrend: dailyTrend.map((bucket) => sanitizePublicTokenUsage(bucket)),
     status: {
       active: effectiveEnabled,
       expired: apiKey.expired || apiKey.disabledReason === "api_key_expired",
@@ -884,4 +912,9 @@ export async function getTokenApiKeyStatusBySecret(secret) {
       remainingTotalTokens: remainingTotal,
     },
   };
+}
+
+function sanitizePublicTokenUsage(usage = {}) {
+  const { rawTotalTokens, quotaMultiplierTotal, manualBaselineTokens, ...rest } = usage || {};
+  return rest;
 }

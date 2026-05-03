@@ -6,8 +6,10 @@ import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, MitmLinkCard } from "./components";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
+import { isPublicBaseUrl, resolvePreferredBaseUrl } from "@/shared/utils/publicBaseUrl";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+const CONFIGURED_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "";
 
 
 const STATUS_ENDPOINTS = {
@@ -25,8 +27,6 @@ export default function CLIToolsPageClient({ machineId }) {
   const [expandedTool, setExpandedTool] = useState(null);
   const [modelMappings, setModelMappings] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
-  const [tunnelEnabled, setTunnelEnabled] = useState(false);
-  const [tunnelApiUrl, setTunnelApiUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
 
@@ -58,18 +58,10 @@ export default function CLIToolsPageClient({ machineId }) {
 
   const loadCloudSettings = async () => {
     try {
-      const [settingsRes, tunnelRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/tunnel/status"),
-      ]);
+      const settingsRes = await fetch("/api/settings");
       if (settingsRes.ok) {
         const data = await settingsRes.json();
         setCloudEnabled(data.cloudEnabled || false);
-      }
-      if (tunnelRes.ok) {
-        const data = await tunnelRes.json();
-        setTunnelEnabled(data.tunnel?.enabled || false);
-        setTunnelApiUrl(data.tunnel?.apiUrl || data.tunnel?.tunnelUrl || data.tunnel?.publicUrl || "");
       }
     } catch (error) {
       console.log("Error loading settings:", error);
@@ -130,11 +122,12 @@ export default function CLIToolsPageClient({ machineId }) {
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelApiUrl) return tunnelApiUrl;
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
-    if (typeof window !== "undefined") return window.location.origin;
-    return "http://localhost:1508";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return resolvePreferredBaseUrl(origin, CONFIGURED_BASE_URL);
   };
+
+  const externalUrlAvailable = isPublicBaseUrl(getBaseUrl());
 
   if (loading) {
     return (
@@ -156,6 +149,7 @@ export default function CLIToolsPageClient({ machineId }) {
       onToggle: () => setExpandedTool(expandedTool === toolId ? null : toolId),
       baseUrl: getBaseUrl(),
       apiKeys,
+      externalUrlAvailable,
     };
 
     switch (toolId) {
@@ -183,7 +177,7 @@ export default function CLIToolsPageClient({ machineId }) {
       case "hermes":
         return <HermesToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.hermes} />;
       default:
-        return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
+        return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
     }
   };
 

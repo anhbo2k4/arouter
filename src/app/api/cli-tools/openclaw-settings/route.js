@@ -6,7 +6,6 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { getTunnelStatus } from "@/lib/tunnel/tunnelManager";
 import { normalizeOpenClawBaseUrl } from "@/lib/cliTools/openclawConfig";
 
 const execAsync = promisify(exec);
@@ -151,8 +150,7 @@ export async function POST(request) {
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
-    const tunnelStatus = await getTunnelStatus().catch(() => null);
-    const normalizedBaseUrl = normalizeOpenClawBaseUrl(baseUrl, { tunnel: tunnelStatus });
+    const normalizedBaseUrl = normalizeOpenClawBaseUrl(baseUrl);
     const fullModelId = `arouter/${model}`;
 
     // Remove all old arouter/* entries from agents.defaults.models

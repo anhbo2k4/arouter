@@ -11,6 +11,11 @@ function fmtLimit(n) {
   return Number(n || 0) > 0 ? fmt(n) : "Unlimited";
 }
 
+function fmtMultiplier(value) {
+  const numeric = Number(value || 1);
+  return Number.isInteger(numeric) ? `${numeric}` : numeric.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function remaining(used, limit) {
   return Number(limit || 0) > 0 ? Math.max(0, Number(limit || 0) - Number(used || 0)) : null;
 }
@@ -51,6 +56,7 @@ const AUTO_REFRESH_MS = 60_000;
 
 export default function ApiKeyTokenLimits() {
   const [keys, setKeys] = useState([]);
+  const [insights, setInsights] = useState({ estimatedCharsSaved7d: 0, estimatedCharsSavedAll: 0, activeKeys: [], recentKeyLogs: [] });
   const [secret, setSecret] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState("");
@@ -70,6 +76,7 @@ export default function ApiKeyTokenLimits() {
     maxTotalTokens: 1000000,
     maxInputTokens: 0,
     maxOutputTokens: 0,
+    quotaMultiplierTotal: 1,
     allowedModels: "",
     expiresAt: "",
   });
@@ -89,6 +96,7 @@ export default function ApiKeyTokenLimits() {
       const data = await res.json();
       const nextKeys = data.keys || [];
       setKeys(nextKeys);
+      setInsights(data.insights || { estimatedCharsSaved7d: 0, estimatedCharsSavedAll: 0, activeKeys: [], recentKeyLogs: [] });
       setLastUpdatedAt(data.updatedAt || new Date().toISOString());
       setRowEdits((prev) => mergeRowEditsWithDirtyRows(nextKeys, prev, dirtyRowsRef.current));
     } finally {
@@ -146,6 +154,7 @@ export default function ApiKeyTokenLimits() {
             maxOutputTokens: Number(form.maxOutputTokens || 0),
             action: "reject",
           },
+          quotaMultiplierTotal: Number(form.quotaMultiplierTotal || 1),
           expiresAt: form.expiresAt || null,
         }),
       });
@@ -173,6 +182,7 @@ export default function ApiKeyTokenLimits() {
       maxTotalTokens: Number(key.quota?.maxTotalTokens || 0),
       maxInputTokens: Number(key.quota?.maxInputTokens || 0),
       maxOutputTokens: Number(key.quota?.maxOutputTokens || 0),
+      quotaMultiplierTotal: Number(key.quotaMultiplierTotal || 1),
       allowedModels: Array.isArray(key.allowedModels) ? key.allowedModels.join(", ") : "",
       expiresAt: formatDateTimeLocal(key.expiresAt),
     };
@@ -196,6 +206,7 @@ export default function ApiKeyTokenLimits() {
           maxOutputTokens: Number(edit.maxOutputTokens || 0),
           action: "reject",
         },
+        quotaMultiplierTotal: Number(edit.quotaMultiplierTotal || 1),
         allowedModels: String(edit.allowedModels || "")
           .split(",")
           .map((item) => item.trim())
@@ -261,6 +272,7 @@ export default function ApiKeyTokenLimits() {
     [keys]
   );
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : "";
+  const liveKeyCount = insights.activeKeys?.length || 0;
   const inputClass =
     "rounded-xl border border-neutral-800 bg-neutral-950/80 px-3 py-2.5 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20";
   const compactInputClass =
@@ -283,7 +295,7 @@ export default function ApiKeyTokenLimits() {
           <p className="text-xs text-neutral-500">Auto refresh: 1m{lastUpdatedLabel ? ` | Last update: ${lastUpdatedLabel}` : ""}</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:min-w-[430px]">
+        <div className="grid grid-cols-2 gap-2 sm:min-w-[560px] sm:grid-cols-4">
           <div className="rounded-xl border border-orange-500/20 bg-neutral-950/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Total Used</div>
             <div className="mt-2 text-lg font-bold text-orange-200">{fmt(totalUsed)}</div>
@@ -295,6 +307,10 @@ export default function ApiKeyTokenLimits() {
           <div className="rounded-xl border border-red-500/20 bg-neutral-950/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Locked</div>
             <div className="mt-2 text-lg font-bold text-red-300">{fmt(lockedCount)}</div>
+          </div>
+          <div className="rounded-xl border border-cyan-500/20 bg-neutral-950/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Chars Saved 7d</div>
+            <div className="mt-2 text-lg font-bold text-cyan-200">{fmt(insights.estimatedCharsSaved7d || 0)}</div>
           </div>
         </div>
       </div>
@@ -321,6 +337,7 @@ export default function ApiKeyTokenLimits() {
           <input className={inputClass} type="number" min="0" placeholder="Total tokens" value={form.maxTotalTokens} onChange={(e) => setForm({ ...form, maxTotalTokens: e.target.value })} />
           <input className={inputClass} type="number" min="0" placeholder="Input limit" value={form.maxInputTokens} onChange={(e) => setForm({ ...form, maxInputTokens: e.target.value })} />
           <input className={inputClass} type="number" min="0" placeholder="Output limit" value={form.maxOutputTokens} onChange={(e) => setForm({ ...form, maxOutputTokens: e.target.value })} />
+          <input className={inputClass} type="number" min="1" step="0.1" placeholder="Total x1.0" value={form.quotaMultiplierTotal} onChange={(e) => setForm({ ...form, quotaMultiplierTotal: e.target.value })} />
           <select className={inputClass} value={form.window} onChange={(e) => setForm({ ...form, window: e.target.value })}>
             <option value="daily">Daily reset at 00:00 VN</option>
           </select>
@@ -338,13 +355,77 @@ export default function ApiKeyTokenLimits() {
         </div>
       </div>
 
+      <div className="mb-6 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
+        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/55 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-neutral-200">Admin quota overlay</div>
+              <div className="text-xs text-neutral-500">Raw upstream usage stays real. Quota total can be multiplied per key for enforcement only.</div>
+            </div>
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-right">
+              <div className="text-[10px] uppercase tracking-wide text-cyan-200">Chars saved all time</div>
+              <div className="mt-1 text-sm font-bold text-white">{fmt(insights.estimatedCharsSavedAll || 0)}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+            <div className="rounded-xl border border-neutral-800 bg-black/30 p-3">
+              <div className="text-neutral-500">Live keys</div>
+              <div className="mt-1 text-sm font-semibold text-white">{fmt(liveKeyCount)}</div>
+            </div>
+            <div className="rounded-xl border border-neutral-800 bg-black/30 p-3">
+              <div className="text-neutral-500">Recent key logs</div>
+              <div className="mt-1 text-sm font-semibold text-white">{fmt(insights.recentKeyLogs?.length || 0)}</div>
+            </div>
+            <div className="rounded-xl border border-neutral-800 bg-black/30 p-3">
+              <div className="text-neutral-500">Default multiplier</div>
+              <div className="mt-1 text-sm font-semibold text-white">x1 total</div>
+            </div>
+            <div className="rounded-xl border border-neutral-800 bg-black/30 p-3">
+              <div className="text-neutral-500">Public view</div>
+              <div className="mt-1 text-sm font-semibold text-white">Adjusted only</div>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/55 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-neutral-200">Live key activity</div>
+              <div className="text-xs text-neutral-500">Keys with in-flight requests right now.</div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {(insights.activeKeys || []).slice(0, 4).map((item) => (
+              <div key={`${item.keyId || item.maskedKey}`} className="rounded-xl border border-neutral-800 bg-black/30 p-3 text-[11px]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-white">{item.keyName}</div>
+                  <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">{item.count} active</div>
+                </div>
+                <div className="mt-1 text-neutral-500">{item.maskedKey}</div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(item.models || []).slice(0, 3).map((modelInfo, index) => (
+                    <span key={`${item.maskedKey}-${modelInfo.model}-${index}`} className="rounded-full border border-neutral-700 bg-neutral-900/80 px-2 py-0.5 text-neutral-300">
+                      {modelInfo.model} · {modelInfo.provider}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!insights.activeKeys?.length ? <div className="rounded-xl border border-dashed border-neutral-700 bg-black/20 p-3 text-[11px] text-neutral-500">No key is actively sending requests right now.</div> : null}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-3">
         {keys.map((key) => {
           const used = Number(key.usage?.totalTokens || 0);
+          const rawUsed = Number((key.usage?.rawTotalTokens ?? key.usage?.totalTokens) || 0);
           const requests = Number(key.usage?.requests || 0);
           const limit = Number(key.quota?.maxTotalTokens || 0);
           const remainingTotal = remaining(used, limit);
           const edit = getRowEdit(key);
+          const multiplier = Number(key.quotaMultiplierTotal || 1);
+          const liveKey = (insights.activeKeys || []).find((item) => item.keyId === key.id);
+          const recentKeyLogs = (insights.recentKeyLogs || []).filter((item) => item.keyId === key.id).slice(0, 3);
           const pct = percent(used, limit);
           const over = limit > 0 && used >= limit;
           const quotaLocked = key.disabledReason === "token_quota_exceeded";
@@ -385,6 +466,7 @@ export default function ApiKeyTokenLimits() {
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">Total usage</p>
                       <p className="mt-1 text-lg font-black text-neutral-100">{fmt(used)} <span className="text-xs font-medium text-neutral-500">/ {fmtLimit(limit)}</span></p>
+                      <p className="mt-1 text-[11px] text-neutral-500">Raw {fmt(rawUsed)} · Quota x{fmtMultiplier(multiplier)}</p>
                     </div>
                     <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-xs font-black text-cyan-200">{pct}%</div>
                   </div>
@@ -434,6 +516,10 @@ export default function ApiKeyTokenLimits() {
                       <span className="text-[10px] text-neutral-500">Output</span>
                       <input className={compactInputClass} type="number" min="0" value={edit.maxOutputTokens} onChange={(e) => onChangeRow(key.id, "maxOutputTokens", e.target.value)} />
                     </label>
+                    <label className="grid gap-1">
+                      <span className="text-[10px] text-neutral-500">Total x</span>
+                      <input className={compactInputClass} type="number" min="1" step="0.1" value={edit.quotaMultiplierTotal} onChange={(e) => onChangeRow(key.id, "quotaMultiplierTotal", e.target.value)} />
+                    </label>
                   </div>
                   <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.7fr)]">
                     <label className="grid gap-1">
@@ -466,6 +552,32 @@ export default function ApiKeyTokenLimits() {
                     <div className="col-span-2 rounded-lg bg-neutral-900/70 p-2">
                       <div className="text-neutral-500">Models</div>
                       <div className="mt-1 line-clamp-2 font-mono text-[11px] text-neutral-200">{key.allowedModels?.length ? key.allowedModels.join(", ") : "All models"}</div>
+                    </div>
+                    <div className="rounded-lg bg-neutral-900/70 p-2">
+                      <div className="text-neutral-500">Raw total</div>
+                      <div className="mt-1 font-semibold text-neutral-200">{fmt(rawUsed)}</div>
+                    </div>
+                    <div className="rounded-lg bg-neutral-900/70 p-2">
+                      <div className="text-neutral-500">Quota x</div>
+                      <div className="mt-1 font-semibold text-neutral-200">x{fmtMultiplier(multiplier)}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-neutral-800 bg-neutral-950/55 p-2 text-[11px]">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="font-semibold text-neutral-200">Recent key logs</div>
+                      {liveKey ? <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">{liveKey.count} live</span> : null}
+                    </div>
+                    <div className="space-y-2">
+                      {recentKeyLogs.map((item, index) => (
+                        <div key={`${key.id}-${item.timestamp}-${index}`} className="rounded-lg bg-black/30 p-2">
+                          <div className="flex items-center justify-between gap-2 text-neutral-300">
+                            <span>{item.model}</span>
+                            <span>{fmt(item.totalTokens)} tok</span>
+                          </div>
+                          <div className="mt-1 text-neutral-500">{item.provider} · {new Date(item.timestamp).toLocaleString("vi-VN")}</div>
+                        </div>
+                      ))}
+                      {!recentKeyLogs.length ? <div className="rounded-lg border border-dashed border-neutral-700 bg-black/20 p-2 text-neutral-500">No recent logs for this key yet.</div> : null}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">

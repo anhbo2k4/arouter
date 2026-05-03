@@ -70,6 +70,17 @@ function stripContentTypes(body, stripList = []) {
   }
 }
 
+// Normalize OpenAI-family token cap aliases into the internal max_tokens field.
+// Some chained routers send Responses-style max_output_tokens, but downstream
+// translation/execution in Arouter consistently expects max_tokens.
+function normalizeTokenParams(body) {
+  if (!body || typeof body !== "object") return;
+  if (body.max_tokens === undefined && body.max_output_tokens !== undefined) {
+    body.max_tokens = body.max_output_tokens;
+  }
+  delete body.max_output_tokens;
+}
+
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, rtkEnabled = false, clientTool = null) {
   ensureInitialized();
@@ -84,6 +95,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
+
+  // Normalize cross-router token aliases before any format-specific translator runs.
+  normalizeTokenParams(result);
 
   // Normalize thinking config: remove if lastMessage is not user
   normalizeThinkingConfig(result);

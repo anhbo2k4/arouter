@@ -270,7 +270,7 @@ export function createSSEStream(options = {}) {
     },
 
     async flush(controller) {
-      trackPendingRequest(model, provider, connectionId, false);
+      trackPendingRequest(model, provider, connectionId, false, false, apiKey);
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;

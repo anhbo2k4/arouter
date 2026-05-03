@@ -1,12 +1,26 @@
 import { NextResponse } from "next/server";
-import { getTunnelStatus, getTailscaleStatus } from "@/lib/tunnel/tunnelManager";
-import { getDownloadStatus } from "@/lib/tunnel/cloudflared";
 
 export async function GET() {
   try {
-    const [tunnel, tailscale] = await Promise.all([getTunnelStatus(), getTailscaleStatus()]);
-    const download = getDownloadStatus();
-    return NextResponse.json({ tunnel, tailscale, download });
+    return NextResponse.json({
+      tunnel: {
+        enabled: false,
+        provider: "nginx",
+        tunnelUrl: "",
+        apiUrl: "",
+        publicUrl: "",
+        message: "Cloudflare tunnel is disabled. Publish the app through Nginx instead.",
+      },
+      tailscale: {
+        enabled: false,
+        tunnelUrl: "",
+      },
+      download: {
+        downloading: false,
+        progress: 0,
+        disabled: true,
+      },
+    });
   } catch (error) {
     console.error("Tunnel status error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,18 +1,5 @@
-export function normalizeOpenClawBaseUrl(baseUrl, tunnelStatus = {}) {
-  const raw = String(baseUrl || "").trim().replace(/\/+$/, "");
-  if (!raw) return "";
+import { appendV1Path } from "@/shared/utils/publicBaseUrl";
 
-  let parsed = null;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return raw.endsWith("/v1") ? raw : `${raw}/v1`;
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  const isArouterShortHost = /^r[a-z0-9]+\.arouter\.com$/.test(host);
-  const directTunnelUrl = tunnelStatus?.tunnel?.apiUrl || tunnelStatus?.tunnel?.tunnelUrl || tunnelStatus?.apiUrl || tunnelStatus?.tunnelUrl || "";
-  const selected = isArouterShortHost && directTunnelUrl ? String(directTunnelUrl).trim().replace(/\/+$/, "") : raw;
-
-  return selected.endsWith("/v1") ? selected : `${selected}/v1`;
+export function normalizeOpenClawBaseUrl(baseUrl) {
+  return appendV1Path(baseUrl);
 }

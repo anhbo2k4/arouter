@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import {
   applySkillOrchestration,
+  buildSkillInstruction,
+  classifyRequestIntent,
   extractRequestText,
+  resolveSkillPolicy,
   selectRelevantSkills,
 } from "../../open-sse/skills/skillOrchestrator.js";
 
@@ -45,6 +48,50 @@ describe("skill orchestration", () => {
     expect(selected.map((skill) => skill.id)).toContain("claude-skills:seo-audit");
   });
 
+  it("classifies trivial prompts as simple intent", () => {
+    expect(classifyRequestIntent("hello")).toBe("simple");
+    expect(classifyRequestIntent("show me my models")).toBe("simple");
+  });
+
+  it("resolves trivial prompts to no orchestration even with always-on skills present", () => {
+    const selected = selectRelevantSkills("hello", catalog, { maxSkills: 3 });
+    const policy = resolveSkillPolicy("hello", selected);
+
+    expect(policy.intent).toBe("simple");
+    expect(policy.mode).toBe("none");
+  });
+
+  it("uses full orchestration for strong debug requests", () => {
+    const prompt = "Fix this production bug with a failing test first, then verify the patch before shipping.";
+    const selected = selectRelevantSkills(prompt, catalog, { maxSkills: 3 });
+    const policy = resolveSkillPolicy(prompt, selected);
+
+    expect(policy.intent).toBe("debug");
+    expect(policy.mode).toBe("full");
+  });
+
+  it("builds a shorter compact instruction than the full instruction", () => {
+    const selected = selectRelevantSkills("Fix a bug with tests.", catalog, { maxSkills: 3 });
+
+    const compactInstruction = buildSkillInstruction(selected, {
+      mode: "compact",
+      maxSkills: 2,
+      maxCharsPerSkill: 90,
+      maxTotalChars: 300,
+    });
+
+    const fullInstruction = buildSkillInstruction(selected, {
+      mode: "full",
+      maxSkills: 2,
+      maxCharsPerSkill: 500,
+      maxTotalChars: 1200,
+    });
+
+    expect(compactInstruction).toContain("Arouter Skill Orchestration");
+    expect(compactInstruction).toContain("test-driven-development");
+    expect(compactInstruction.length).toBeLessThan(fullInstruction.length);
+  });
+
   it("extracts customer text from Responses API input and instructions", () => {
     const text = extractRequestText({
       instructions: "You are an agent.",
@@ -59,6 +106,29 @@ describe("skill orchestration", () => {
 
     expect(text).toContain("You are an agent.");
     expect(text).toContain("Build a dashboard and write tests.");
+  });
+
+  it("skips orchestration for trivial chat prompts", () => {
+    let observed = null;
+    const body = applySkillOrchestration(
+      {
+        model: "openai/gpt",
+        messages: [{ role: "user", content: "hello there" }],
+      },
+      FORMATS.OPENAI,
+      {
+        catalog,
+        maxSkills: 3,
+        onApplied: (stats) => {
+          observed = stats;
+        },
+      },
+    );
+
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].role).toBe("user");
+    expect(observed.mode).toBe("none");
+    expect(observed.estimatedCharsSaved).toBeGreaterThan(0);
   });
 
   it("injects a compact skill instruction into OpenAI chat messages", () => {

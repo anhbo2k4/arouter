@@ -46,7 +46,7 @@ export const DOCS_TOOLS = [
     installCommand: "npm install -g @openai/codex",
     steps: [
       "Install Codex CLI and verify with `codex`.",
-      `Set \`base_url\` to \`${AROUTER_BASE_URL}\` inside the \`model_providers.KRouter\` block and keep \`wire_api = "responses"\`.`,
+      `Set \`base_url\` to \`${AROUTER_BASE_URL}\` inside the \`model_providers.ARouter\` block and keep \`wire_api = "responses"\`.`,
       "Store `OPENAI_API_KEY` in `~/.codex/auth.json`, then set your main model and optional subagent model.",
     ],
     snippets: [
@@ -54,12 +54,12 @@ export const DOCS_TOOLS = [
         language: "toml",
         filename: "~/.codex/config.toml",
         code: `model = "gpt-5.5"
-model_provider = "KRouter"
+model_provider = "ARouter"
 sandbox_mode = "danger-full-access"
 model_reasoning_effort = "xhigh"
 
-[model_providers.KRouter]
-name = "KRouter"
+[model_providers.ARouter]
+name = "ARouter"
 base_url = "${AROUTER_BASE_URL}"
 wire_api = "responses"
 
@@ -88,7 +88,7 @@ model = "cx/gpt-5.3-codex"`,
     installCommand: "npm install -g opencode-ai",
     steps: [
       "Install OpenCode and verify the CLI is available.",
-      `Create a provider named \`krouter\` that uses the OpenAI-compatible SDK with \`baseURL = ${AROUTER_BASE_URL}\`.`,
+      `Create a provider named \`arouter\` that uses the OpenAI-compatible SDK with \`baseURL = ${AROUTER_BASE_URL}\`.`,
       "Attach your ARouter API key, register one or more models, and optionally set a subagent explorer model.",
     ],
     snippets: [
@@ -97,7 +97,7 @@ model = "cx/gpt-5.3-codex"`,
         filename: "~/.config/opencode/opencode.json",
         code: `{
   "provider": {
-    "krouter": {
+    "arouter": {
       "npm": "@ai-sdk/openai-compatible",
       "options": {
         "baseURL": "${AROUTER_BASE_URL}",
@@ -105,7 +105,7 @@ model = "cx/gpt-5.3-codex"`,
       }
     }
   },
-  "model": "krouter/provider/model-id"
+  "model": "arouter/provider/model-id"
 }`,
       },
     ],
@@ -120,8 +120,8 @@ model = "cx/gpt-5.3-codex"`,
     summary:
       "Open Claw uses ~/.openclaw/openclaw.json and can map a default model plus per-agent overrides.",
     steps: [
-      `Define provider \`krouter\` with \`baseUrl = ${AROUTER_BASE_URL}\` and your ARouter API key.`,
-      "Set the default agent model to `krouter/provider/model-id`.",
+      `Define provider \`arouter\` with \`baseUrl = ${AROUTER_BASE_URL}\` and your ARouter API key.`,
+      "Set the default agent model to `arouter/provider/model-id`.",
       "If needed, override individual agent models for specific workflows.",
     ],
     snippets: [
@@ -132,13 +132,13 @@ model = "cx/gpt-5.3-codex"`,
   "agents": {
     "defaults": {
       "model": {
-        "primary": "krouter/provider/model-id"
+        "primary": "arouter/provider/model-id"
       }
     }
   },
   "models": {
     "providers": {
-      "krouter": {
+      "arouter": {
         "baseUrl": "${AROUTER_BASE_URL}",
         "apiKey": "YOUR_AROUTER_API_KEY"
       }
@@ -170,7 +170,7 @@ model = "cx/gpt-5.3-codex"`,
   "customModels": [
     {
       "model": "provider/model-id",
-      "id": "custom:KRouter-0",
+      "id": "custom:ARouter-0",
       "baseUrl": "${AROUTER_BASE_URL}",
       "apiKey": "YOUR_AROUTER_API_KEY",
       "provider": "openai"

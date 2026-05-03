@@ -146,6 +146,7 @@ function getEntryUsageMath(entry) {
     reasoningCost: breakdown.reasoningCost,
     cost: breakdown.totalCost,
     costBreakdown: breakdown,
+    estimatedCharsSaved: toNumber(entry?.estimatedCharsSaved),
     tokens,
   };
 }
@@ -164,6 +165,7 @@ function applyUsageValues(target, values) {
   target.cacheCreationCost = (target.cacheCreationCost || 0) + (values.cacheCreationCost || 0);
   target.reasoningCost = (target.reasoningCost || 0) + (values.reasoningCost || 0);
   target.cost = (target.cost || 0) + (values.cost || 0);
+  target.estimatedCharsSaved = (target.estimatedCharsSaved || 0) + (values.estimatedCharsSaved || 0);
 }
 
 function makeCounter(values = {}) {
@@ -181,6 +183,7 @@ function makeCounter(values = {}) {
     cacheCreationCost: 0,
     reasoningCost: 0,
     cost: 0,
+    estimatedCharsSaved: 0,
   };
   applyUsageValues(counter, values);
   return counter;
@@ -200,6 +203,7 @@ function applyStatsTotals(stats, values) {
   stats.totalCacheCreationCost += values.cacheCreationCost || 0;
   stats.totalReasoningCost += values.reasoningCost || 0;
   stats.totalCost += values.cost || 0;
+  stats.totalEstimatedCharsSaved += values.estimatedCharsSaved || 0;
 }
 
 function addToCounter(target, key, values) {
@@ -264,9 +268,12 @@ let dbInstance = null;
 
 // Use global to share pending state across Next.js route modules
 if (!global._pendingRequests) {
-  global._pendingRequests = { byModel: {}, byAccount: {} };
+  global._pendingRequests = { byModel: {}, byAccount: {}, byApiKey: {} };
 }
 const pendingRequests = global._pendingRequests;
+pendingRequests.byModel ||= {};
+pendingRequests.byAccount ||= {};
+pendingRequests.byApiKey ||= {};
 
 // Track last error provider for UI edge coloring (auto-clears after 10s)
 if (!global._lastErrorProvider) {
@@ -295,9 +302,9 @@ const PENDING_TIMEOUT_MS = 60 * 1000; // 1 minute
  * @param {boolean} started - true if started, false if finished
  * @param {boolean} [error] - true if ended with error
  */
-export function trackPendingRequest(model, provider, connectionId, started, error = false) {
+export function trackPendingRequest(model, provider, connectionId, started, error = false, apiKey = null) {
   const modelKey = provider ? `${model} (${provider})` : model;
-  const timerKey = `${connectionId}|${modelKey}`;
+  const timerKey = `${connectionId || "-"}|${apiKey || "-"}|${modelKey}`;
 
   // Track by model
   if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
@@ -310,6 +317,12 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     pendingRequests.byAccount[connectionId][modelKey] = Math.max(0, pendingRequests.byAccount[connectionId][modelKey] + (started ? 1 : -1));
   }
 
+  if (apiKey) {
+    if (!pendingRequests.byApiKey[apiKey]) pendingRequests.byApiKey[apiKey] = {};
+    if (!pendingRequests.byApiKey[apiKey][modelKey]) pendingRequests.byApiKey[apiKey][modelKey] = 0;
+    pendingRequests.byApiKey[apiKey][modelKey] = Math.max(0, pendingRequests.byApiKey[apiKey][modelKey] + (started ? 1 : -1));
+  }
+
   if (started) {
     // Safety timeout: force-clear if END is never called (client disconnect, crash, etc.)
     clearTimeout(pendingTimers[timerKey]);
@@ -320,6 +333,9 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
       }
       if (connectionId && pendingRequests.byAccount[connectionId]?.[modelKey] > 0) {
         pendingRequests.byAccount[connectionId][modelKey] = 0;
+      }
+      if (apiKey && pendingRequests.byApiKey[apiKey]?.[modelKey] > 0) {
+        pendingRequests.byApiKey[apiKey][modelKey] = 0;
       }
       statsEmitter.emit("pending");
     }, PENDING_TIMEOUT_MS);
@@ -345,14 +361,20 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
  */
 export async function getActiveRequests() {
   const activeRequests = [];
+  const activeKeys = [];
 
   // Build active requests from pending state
   let connectionMap = {};
+  let apiKeyMap = {};
   try {
-    const { getProviderConnections } = await import("@/lib/localDb.js");
+    const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
     const allConnections = await getProviderConnections();
     for (const conn of allConnections) {
       connectionMap[conn.id] = conn.name || conn.email || conn.id;
+    }
+    const allApiKeys = await getApiKeys();
+    for (const key of allApiKeys) {
+      apiKeyMap[key.key] = { id: key.id, name: key.name || key.id };
     }
   } catch {}
 
@@ -368,6 +390,26 @@ export async function getActiveRequests() {
     }
   }
 
+  for (const [apiKeyValue, models] of Object.entries(pendingRequests.byApiKey)) {
+    const keyInfo = apiKeyMap[apiKeyValue] || { id: null, name: `${apiKeyValue.slice(0, 8)}...` };
+    const pendingModels = Object.entries(models).filter(([, count]) => count > 0);
+    if (!pendingModels.length) continue;
+
+    activeKeys.push({
+      keyId: keyInfo.id,
+      keyName: keyInfo.name,
+      maskedKey: `${apiKeyValue.slice(0, 8)}...`,
+      count: pendingModels.reduce((sum, [, count]) => sum + count, 0),
+      models: pendingModels.map(([modelKey]) => {
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        return {
+          model: match ? match[1] : modelKey,
+          provider: match ? match[2] : "unknown",
+        };
+      }),
+    });
+  }
+
   // Get recent requests from history (re-read to get latest)
   const db = await getUsageDb();
   await db.read();
@@ -376,6 +418,7 @@ export async function getActiveRequests() {
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = normalizeUsageTokens(e.tokens || {});
+      const keyInfo = e.apiKey ? apiKeyMap[e.apiKey] : null;
       return {
         timestamp: e.timestamp,
         model: e.model,
@@ -384,6 +427,8 @@ export async function getActiveRequests() {
         completionTokens: t.completion_tokens,
         totalTokens: t.total_tokens,
         status: e.status || "ok",
+        keyId: keyInfo?.id || null,
+        keyName: keyInfo?.name || null,
       };
     })
     .filter((e) => {
@@ -395,7 +440,7 @@ export async function getActiveRequests() {
   // Error provider (auto-clear after 10s)
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
 
-  return { activeRequests, recentRequests, errorProvider };
+  return { activeRequests, activeKeys, recentRequests, errorProvider };
 }
 
 /**
@@ -530,6 +575,10 @@ export async function getUsageHistory(filter = {}) {
     history = history.filter(h => h.model === filter.model);
   }
 
+  if (filter.apiKey) {
+    history = history.filter(h => h.apiKey === filter.apiKey);
+  }
+
   if (filter.startDate) {
     const start = new Date(filter.startDate).getTime();
     history = history.filter(h => new Date(h.timestamp).getTime() >= start);
@@ -541,6 +590,44 @@ export async function getUsageHistory(filter = {}) {
   }
 
   return history;
+}
+
+export async function getApiKeyActivitySummary({ limit = 20 } = {}) {
+  const db = await getUsageDb();
+  await db.read();
+  const history = [...(db.data.history || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  let apiKeyMap = {};
+  try {
+    const { getApiKeys } = await import("@/lib/localDb.js");
+    const keys = await getApiKeys();
+    for (const key of keys) {
+      apiKeyMap[key.key] = { id: key.id, name: key.name || key.id };
+    }
+  } catch {}
+
+  const recentKeyLogs = history
+    .filter((entry) => typeof entry.apiKey === "string" && entry.apiKey.trim())
+    .slice(0, limit)
+    .map((entry) => {
+      const tokens = normalizeUsageTokens(entry.tokens || {});
+      const keyInfo = apiKeyMap[entry.apiKey] || { id: null, name: `${entry.apiKey.slice(0, 8)}...` };
+      return {
+        timestamp: entry.timestamp,
+        keyId: keyInfo.id,
+        keyName: keyInfo.name,
+        maskedKey: `${entry.apiKey.slice(0, 8)}...`,
+        model: entry.model,
+        provider: entry.provider || "",
+        promptTokens: tokens.prompt_tokens,
+        completionTokens: tokens.completion_tokens,
+        totalTokens: tokens.total_tokens,
+        estimatedCharsSaved: toNumber(entry.estimatedCharsSaved),
+      };
+    });
+
+  const { activeKeys } = await getActiveRequests();
+  return { activeKeys, recentKeyLogs };
 }
 
 /**
@@ -742,10 +829,12 @@ export async function getUsageStats(period = "all") {
     totalPromptTokens: 0, totalCompletionTokens: 0, totalTokens: 0,
     totalCachedTokens: 0, totalCacheCreationTokens: 0, totalReasoningTokens: 0,
     totalInputCost: 0, totalOutputCost: 0, totalCachedCost: 0, totalCacheCreationCost: 0, totalReasoningCost: 0, totalCost: 0,
+    totalEstimatedCharsSaved: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
+    activeKeys: [],
     recentRequests,
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
     generatedAt: new Date().toISOString(),
@@ -764,6 +853,25 @@ export async function getUsageStats(period = "all") {
         });
       }
     }
+  }
+
+  for (const [apiKeyValue, models] of Object.entries(pendingRequests.byApiKey || {})) {
+    const keyInfo = apiKeyMap[apiKeyValue] || { id: null, name: `${apiKeyValue.slice(0, 8)}...` };
+    const activeModels = Object.entries(models).filter(([, count]) => count > 0);
+    if (!activeModels.length) continue;
+    stats.activeKeys.push({
+      keyId: keyInfo.id,
+      keyName: keyInfo.name,
+      maskedKey: `${apiKeyValue.slice(0, 8)}...`,
+      count: activeModels.reduce((sum, [, count]) => sum + count, 0),
+      models: activeModels.map(([modelKey]) => {
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        return {
+          model: match ? match[1] : modelKey,
+          provider: match ? match[2] : "unknown",
+        };
+      }),
+    });
   }
 
   // last10Minutes — always from live history

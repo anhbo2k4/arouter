@@ -12,6 +12,7 @@ export function buildRowEditSnapshot(key) {
     maxTotalTokens: Number(key.quota?.maxTotalTokens || 0),
     maxInputTokens: Number(key.quota?.maxInputTokens || 0),
     maxOutputTokens: Number(key.quota?.maxOutputTokens || 0),
+    quotaMultiplierTotal: Number(key.quotaMultiplierTotal || 1),
     allowedModels: Array.isArray(key.allowedModels) ? key.allowedModels.join(", ") : "",
     expiresAt: formatDateTimeLocal(key.expiresAt),
   };

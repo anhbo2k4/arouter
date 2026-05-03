@@ -27,6 +27,7 @@ describe("api key token limits row edit state", () => {
         maxTotalTokens: 7777,
         maxInputTokens: 11,
         maxOutputTokens: 22,
+        quotaMultiplierTotal: 1.5,
         allowedModels: "custom-a, custom-b",
         expiresAt: "2026-05-09T09:00",
       },
@@ -48,6 +49,7 @@ describe("api key token limits row edit state", () => {
       maxTotalTokens: 42,
       maxInputTokens: 0,
       maxOutputTokens: 0,
+      quotaMultiplierTotal: 1,
       allowedModels: "model-a, model-b",
       expiresAt: "2026-05-05T10:30",
     });

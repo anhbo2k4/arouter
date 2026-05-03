@@ -115,4 +115,48 @@ describe("request normalization", () => {
     const parsed = parseSSELine('data: {"choices":[{"delta":{"content":"hi"}}]}');
     expect(parsed.choices[0].delta.content).toBe("hi");
   });
+
+  it("translateRequest normalizes max_output_tokens for same-format Responses forwarding", () => {
+    const body = {
+      model: "openai-compatible-responses/demo",
+      input: "hello",
+      max_output_tokens: 321,
+      stream: true,
+    };
+
+    const result = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      "demo",
+      JSON.parse(JSON.stringify(body)),
+      true,
+      null,
+      "openai-compatible-responses-demo",
+    );
+
+    expect(result.max_tokens).toBe(321);
+    expect("max_output_tokens" in result).toBe(false);
+  });
+
+  it("translateRequest normalizes max_output_tokens before Responses-to-Chat translation", () => {
+    const body = {
+      model: "openai-compatible-chat/demo",
+      input: "hello",
+      max_output_tokens: 123,
+      stream: false,
+    };
+
+    const result = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI,
+      "demo",
+      JSON.parse(JSON.stringify(body)),
+      false,
+      null,
+      "openai-compatible-chat-demo",
+    );
+
+    expect(result.max_tokens).toBe(123);
+    expect("max_output_tokens" in result).toBe(false);
+  });
 });
