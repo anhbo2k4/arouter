@@ -43,6 +43,11 @@ function toFiniteNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function toTimestamp(value) {
+  const numeric = new Date(value || 0).getTime();
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 export function normalizeQuotaMultiplierTotal(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 1;
@@ -60,6 +65,43 @@ export function applyQuotaMultiplierToUsage(usage = {}, multiplier = 1) {
     rawTotalTokens,
     quotaMultiplierTotal: normalizedMultiplier,
   };
+}
+
+export function applyQuotaMultiplierToRows(rows = [], multiplier = 1) {
+  const normalizedMultiplier = normalizeQuotaMultiplierTotal(multiplier);
+  const extraMultiplier = Math.max(0, normalizedMultiplier - 1);
+  const result = rows.reduce(
+    (acc, row) => {
+      const tokens = normalizeTokenRow(row);
+      const rawTotal = tokens.totalTokens;
+      const virtualFloat = rawTotal * extraMultiplier + acc._carry;
+      const virtualWhole = Math.floor(virtualFloat);
+      acc._carry = virtualFloat - virtualWhole;
+      acc.requests += 1;
+      acc.inputTokens += tokens.inputTokens;
+      acc.outputTokens += tokens.outputTokens;
+      acc.rawTotalTokens += rawTotal;
+      acc.totalTokens += rawTotal + virtualWhole;
+      acc.cachedTokens += tokens.cachedTokens;
+      acc.cacheCreationTokens += tokens.cacheCreationTokens;
+      acc.reasoningTokens += tokens.reasoningTokens;
+      return acc;
+    },
+    {
+      requests: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      rawTotalTokens: 0,
+      _carry: 0,
+      cachedTokens: 0,
+      cacheCreationTokens: 0,
+      reasoningTokens: 0,
+      quotaMultiplierTotal: normalizedMultiplier,
+    },
+  );
+  const { _carry, ...publicResult } = result;
+  return publicResult;
 }
 
 function normalizeTokenRow(row = {}) {
@@ -535,7 +577,6 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
     .filter((row) => row.apiKeyId === apiKeyId)
     .filter((row) => new Date(row.createdAt) >= sinceDate)
     .filter((row) => row.provider !== "chat-completions");
-  const internalUsage = aggregateUsageRows(internalRows);
   const exactLedgerIds = new Set(
     internalRows
       .filter((row) => row.source === EXACT_USAGE_SOURCE && row.usageEntryId)
@@ -543,35 +584,28 @@ export async function getTokenApiKeyUsage(apiKeyId, window = "monthly") {
   );
 
   // Exact usage from open-sse usage history (saved with apiKey + real/normalized tokens)
-  let exactUsage = aggregateUsageRows();
+  let exactRows = [];
   try {
     if (apiKeyValue) {
       const { getUsageHistory } = await import("@/lib/usageDb");
       const history = await getUsageHistory({ startDate: since });
-      const rows = history
+      exactRows = history
         .filter((row) => row.apiKey === apiKeyValue)
         .filter((row) => !row.id || !exactLedgerIds.has(row.id))
-        .map((row) => {
-          return normalizeTokenRow(row.tokens || {});
-        });
-      exactUsage = aggregateUsageRows(rows);
+        .map((row) => normalizeTokenRow(row.tokens || {}));
     }
   } catch {
     // Fallback to internalUsage when usageDb is unavailable
   }
 
-  const rawUsage = {
-    requests: exactUsage.requests + internalUsage.requests,
-    inputTokens: exactUsage.inputTokens + internalUsage.inputTokens,
-    outputTokens: exactUsage.outputTokens + internalUsage.outputTokens,
-    totalTokens: exactUsage.totalTokens + internalUsage.totalTokens,
-    cachedTokens: exactUsage.cachedTokens + internalUsage.cachedTokens,
-    cacheCreationTokens: exactUsage.cacheCreationTokens + internalUsage.cacheCreationTokens,
-    reasoningTokens: exactUsage.reasoningTokens + internalUsage.reasoningTokens,
-    exactRequests: exactUsage.requests,
-    internalRequests: internalUsage.requests,
+  const orderedRows = [...internalRows, ...exactRows].sort(
+    (left, right) => toTimestamp(left.createdAt || left.timestamp) - toTimestamp(right.createdAt || right.timestamp),
+  );
+  const usage = {
+    ...applyQuotaMultiplierToRows(orderedRows, quotaMultiplierTotal),
+    exactRequests: exactRows.length,
+    internalRequests: internalRows.length,
   };
-  const usage = applyQuotaMultiplierToUsage(rawUsage, quotaMultiplierTotal);
 
   const override = db.usageOverrides
     .filter((row) => row.apiKeyId === apiKeyId && row.window === window)
@@ -625,6 +659,10 @@ export async function getTokenApiKeyDailyTrend(apiKeyId, days = 7) {
   const buckets = getLastVietnamDays(days);
   const bucketMap = new Map(buckets.map((bucket) => [bucket.date, bucket]));
   const startDate = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
+  const keys = await getApiKeys();
+  const keyObj = keys.find((k) => k.id === apiKeyId);
+  const apiKeyValue = keyObj?.key;
+  const quotaMultiplierTotal = normalizeQuotaMultiplierTotal(keyObj?.quotaMultiplierTotal);
 
   const db = await readQuotaDb();
   const exactLedgerIds = new Set(
@@ -632,25 +670,15 @@ export async function getTokenApiKeyDailyTrend(apiKeyId, days = 7) {
       .filter((row) => row.source === EXACT_USAGE_SOURCE && row.usageEntryId)
       .map((row) => row.usageEntryId)
   );
+  const orderedRows = [];
   for (const row of db.usage || []) {
     if (row.apiKeyId !== apiKeyId) continue;
     if (row.provider === "chat-completions") continue;
     const createdAt = new Date(row.createdAt || 0);
     if (createdAt < startDate) continue;
-
-    const bucket = bucketMap.get(vietnamDayKey(createdAt));
-    if (!bucket) continue;
-    const tokens = normalizeTokenRow(row);
-    bucket.requests += 1;
-    bucket.inputTokens += tokens.inputTokens;
-    bucket.outputTokens += tokens.outputTokens;
-    bucket.totalTokens += tokens.totalTokens;
+    orderedRows.push({ ...row, __ts: row.createdAt || row.timestamp });
   }
 
-  const keys = await getApiKeys();
-  const keyObj = keys.find((k) => k.id === apiKeyId);
-  const apiKeyValue = keyObj?.key;
-  const quotaMultiplierTotal = normalizeQuotaMultiplierTotal(keyObj?.quotaMultiplierTotal);
   try {
     if (apiKeyValue) {
       const { getUsageHistory } = await import("@/lib/usageDb");
@@ -658,21 +686,52 @@ export async function getTokenApiKeyDailyTrend(apiKeyId, days = 7) {
       for (const row of history) {
         if (row.apiKey !== apiKeyValue) continue;
         if (row.id && exactLedgerIds.has(row.id)) continue;
-        const bucket = bucketMap.get(vietnamDayKey(new Date(row.timestamp || 0)));
-        if (!bucket) continue;
-
-        const tokens = normalizeTokenRow(row.tokens || {});
-        bucket.requests += 1;
-        bucket.inputTokens += tokens.inputTokens;
-        bucket.outputTokens += tokens.outputTokens;
-        bucket.totalTokens += tokens.totalTokens;
+        orderedRows.push({
+          ...(row.tokens || {}),
+          __ts: row.timestamp,
+        });
       }
     }
   } catch {
     // Trend falls back to internal token-quota rows only.
   }
 
-  return buckets.map((bucket) => applyQuotaMultiplierToUsage(bucket, quotaMultiplierTotal));
+  orderedRows.sort((left, right) => toTimestamp(left.__ts) - toTimestamp(right.__ts));
+  let carry = 0;
+  const extraMultiplier = Math.max(0, quotaMultiplierTotal - 1);
+  for (const row of orderedRows) {
+    const timestamp = new Date(row.__ts || 0);
+    const bucket = bucketMap.get(vietnamDayKey(timestamp));
+    if (!bucket) continue;
+    const tokens = normalizeTokenRow(row.tokens ? row.tokens : row);
+    const rawTotal = tokens.totalTokens;
+    const virtualFloat = rawTotal * extraMultiplier + carry;
+    const virtualWhole = Math.floor(virtualFloat);
+    carry = virtualFloat - virtualWhole;
+
+    bucket.requests += 1;
+    bucket.inputTokens += tokens.inputTokens;
+    bucket.outputTokens += tokens.outputTokens;
+    bucket.totalTokens += rawTotal + virtualWhole;
+    bucket.rawTotalTokens = (bucket.rawTotalTokens || 0) + rawTotal;
+    bucket.cachedTokens = (bucket.cachedTokens || 0) + tokens.cachedTokens;
+    bucket.cacheCreationTokens = (bucket.cacheCreationTokens || 0) + tokens.cacheCreationTokens;
+    bucket.reasoningTokens = (bucket.reasoningTokens || 0) + tokens.reasoningTokens;
+  }
+
+  return buckets.map((bucket) => ({
+    date: bucket.date,
+    label: bucket.label,
+    requests: bucket.requests,
+    inputTokens: bucket.inputTokens,
+    outputTokens: bucket.outputTokens,
+    totalTokens: bucket.totalTokens,
+    rawTotalTokens: bucket.rawTotalTokens || 0,
+    cachedTokens: bucket.cachedTokens || 0,
+    cacheCreationTokens: bucket.cacheCreationTokens || 0,
+    reasoningTokens: bucket.reasoningTokens || 0,
+    quotaMultiplierTotal,
+  }));
 }
 
 export async function setTokenApiKeyUsage({ apiKeyId, window = "monthly", totalTokens, inputTokens, outputTokens }) {

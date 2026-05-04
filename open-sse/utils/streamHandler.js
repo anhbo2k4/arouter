@@ -5,6 +5,19 @@ function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function isBenignStreamTermination(error) {
+  if (!error) return false;
+  if (error.name === "AbortError") return true;
+  const message = String(error.message || "");
+  const causeCode = error?.cause?.code || error?.code || "";
+  const causeMessage = String(error?.cause?.message || "");
+  return (
+    causeCode === "UND_ERR_SOCKET" ||
+    /terminated/i.test(message) ||
+    /other side closed/i.test(causeMessage)
+  );
+}
+
 /**
  * Create stream controller with abort and disconnect detection
  * @param {object} options
@@ -106,6 +119,13 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         }
         controller.enqueue(value);
       } catch (error) {
+        if (isBenignStreamTermination(error)) {
+          streamController.handleComplete();
+          reader.cancel().catch(() => {});
+          writer.abort().catch(() => {});
+          controller.close();
+          return;
+        }
         streamController.handleError(error);
         // Cleanup reader/writer to avoid orphaned streams
         reader.cancel().catch(() => {});

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyQuotaMultiplierToUsage,
+  applyQuotaMultiplierToRows,
   normalizeQuotaMultiplierTotal,
 } from "../../src/lib/tokenQuotaStore.js";
 
@@ -31,6 +32,33 @@ describe("token quota multiplier", () => {
       outputTokens: 50,
       totalTokens: 225,
       rawTotalTokens: 150,
+      quotaMultiplierTotal: 1.5,
+    });
+  });
+
+  it("accounts quota with fractional carry so small requests do not jump too aggressively", () => {
+    expect(applyQuotaMultiplierToRows([
+      { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
+      { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
+    ], 1.5)).toEqual({
+      requests: 2,
+      inputTokens: 2,
+      outputTokens: 0,
+      totalTokens: 3,
+      rawTotalTokens: 2,
+      cachedTokens: 0,
+      cacheCreationTokens: 0,
+      reasoningTokens: 0,
+      quotaMultiplierTotal: 1.5,
+    });
+  });
+
+  it("still converges to the configured multiplier over larger usage", () => {
+    expect(applyQuotaMultiplierToRows([
+      { inputTokens: 25, outputTokens: 25, totalTokens: 50 },
+    ], 1.5)).toMatchObject({
+      totalTokens: 75,
+      rawTotalTokens: 50,
       quotaMultiplierTotal: 1.5,
     });
   });
