@@ -1,0 +1,107 @@
+model = "cx/gpt-5.4"
+model_provider = "cx"
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[model_providers.cx]
+name = "cx"
+base_url = "http://localhost:1508/v1"
+wire_api = "responses"
+
+[agents.subagent]
+model = "cx/gpt-5.4"
+
+model_verbosity                    = "low"
+model_reasoning_summary            = "auto"
+model_supports_reasoning_summaries = true
+suppress_experimental_warnings     = true
+disable_response_storage           = false
+tool_call_token_budget             = 8000
+review_model                       = "gpt-5.5"
+model_instructions_file            = 'C:\Users\thean\.codex\AGENTS.md'  # ← fix: phải ở đây
+
+[windows]
+sandbox = "unelevated"
+
+[features]
+shell_snapshot = true
+view_image     = true
+web_search     = true
+
+[projects.'D:\17TR5\giftbox-game']
+trust_level = "trusted"
+[projects.'D:\web_sell']
+trust_level = "trusted"
+[projects.'D:\web_sellV2']
+trust_level = "trusted"
+[projects.'D:\longvanquy\longvanquy']
+trust_level = "trusted"
+[projects.'D:\kem_pro']
+trust_level = "trusted"
+[projects.'D:\roblox\prj_1']
+trust_level = "trusted"
+[projects.'D:\alterdev.shop']
+trust_level = "trusted"
+[projects.'C:\Users\thean']
+trust_level = "trusted"
+[projects.'D:\chatbot_v1']
+trust_level = "trusted"
+[projects.'d:\test']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-23-m-nh-c-c-i-th']
+trust_level = "trusted"
+[projects.'d:\app_longvanquy']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-24\b-n-ang-l-model-version']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-25\skills-entries-searxng-enabled-true-env']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-25\c-ng-i-n-i-m']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-25\t-i-sao-h-c-th']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-26\t-i-c-file-agents-md']
+trust_level = "trusted"
+[projects.'c:\users\thean\documents\codex\2026-04-26\ph-n-t-ch-https-github']
+trust_level = "trusted"
+
+[projects.'c:\users\thean\documents\codex\2026-04-26\codex-imagen-c-users-thean-codex']
+trust_level = "trusted"
+
+[projects.'c:\users\thean\documents\codex\2026-04-27\t-o-vps-tr-n-digitalocean']
+trust_level = "trusted"
+
+[projects.'d:\9router_rebuild']
+trust_level = "trusted"
+
+[projects.'d:\9router']
+trust_level = "trusted"
+
+[projects.'c:\users\thean\desktop\9router_forgood\clone_9router']
+trust_level = "trusted"
+
+[projects.'c:\users\hahahccc\desktop\arouter']
+trust_level = "trusted"
+
+[projects.'c:\users\hahahccc']
+trust_level = "trusted"
+
+[projects.'c:\users\hahahccc\desktop\ds2api']
+trust_level = "trusted"
+
+[plugins."superpowers@openai-curated"]
+enabled = true
+
+[mcp_servers.code-review-graph]
+command = 'C:\Users\thean\AppData\Roaming\Python\Python312\Scripts\code-review-graph.exe'
+args = ["serve"]
+type = "stdio"
+
+[marketplaces.openai-bundled]
+last_updated = "2026-04-27T13:33:21Z"
+source_type = "local"
+source = '\\?\C:\Users\thean\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[tui.model_availability_nux]
+"gpt-5.5" = 1

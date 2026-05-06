@@ -1,0 +1,19 @@
+{
+    "createdAt":  "2026-05-06T13:41:05.0744042+00:00",
+    "machineName":  "VINHGAYY",
+    "repoRoot":  "C:\\Users\\hahahccc\\Desktop\\arouter",
+    "sources":  {
+                    "repoEnv":  "C:\\Users\\hahahccc\\Desktop\\arouter\\.env",
+                    "dataDir":  "C:\\Users\\hahahccc\\AppData\\Roaming\\arouter",
+                    "preferredDataDir":  "C:\\ProgramData\\arouter",
+                    "fallbackDataDir":  "C:\\Users\\hahahccc\\AppData\\Roaming\\arouter",
+                    "codexDir":  "C:\\Users\\hahahccc\\.codex",
+                    "nginxConfPath":  "C:\\nginx-1.30.0\\conf\\nginx.conf"
+                },
+    "restoreTargets":  {
+                           "repoEnv":  ".env",
+                           "dataDir":  "C:\\ProgramData\\arouter",
+                           "codexDir":  "C:\\Users\\\u003cuser\u003e\\.codex",
+                           "nginxConfPath":  "C:\\nginx-1.30.0\\conf\\nginx.conf"
+                       }
+}
